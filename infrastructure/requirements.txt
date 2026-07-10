@@ -1,0 +1,8 @@
+# AlphaWise-Elite — DB migration & schema araçları
+# Versiyonlar pinlenmiştir (production güvenliği)
+
+alembic==1.14.0
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+pydantic==2.10.3
+python-dotenv==1.0.1
