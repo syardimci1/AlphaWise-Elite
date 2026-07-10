@@ -32,6 +32,8 @@ EC2 #1  alphawise-1-db (Tailscale)
 - `infrastructure/common/schemas/agent_output.py` (Madde 3.4 birebir)
 - `infrastructure/common/schemas/handoff_request.py` (from alias'ı ile)
 - `.gitignore`'a `.env` ve varyantları eklendi
+- **`infrastructure/tailscale.acl`** — zero-trust ACL (tag:db, tag:app, tag:admin) + Tailscale SSH + ACL testleri
+- **`infrastructure/tailscale.acl.README.md`** — kurulum + AWS SG entegrasyon rehberi
 
 ## Doğrulanan Testler
 - `python -c` ile Pydantic şema instantiation ✓

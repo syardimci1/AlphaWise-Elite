@@ -1,0 +1,130 @@
+// =============================================================================
+// AlphaWise-Elite — Tailscale ACL Policy
+// =============================================================================
+// Kullanım:
+//   1) https://login.tailscale.com/admin/acls adresine git
+//   2) Bu dosyanın içeriğini "Access Controls" sekmesine yapıştır
+//   3) Preview → Save
+//
+// Prensip: DEFAULT DENY. Sadece açıkça izin verilen trafik geçer.
+//
+// Mimarî (bu iterasyon):
+//   - alphawise-1-db  : PostgreSQL (5432), Redis (6379), ChromaDB (8000)
+//   - alphawise-2-app : uygulama katmanı — DB katmanına erişir
+//   - admin           : SSH + Tailscale erişimi olan gerçek kişi (sen)
+//
+// EC2'lerin Tailscale'e eklenmesi (bir kez):
+//   sudo tailscale up \
+//     --authkey=tskey-auth-XXXX \
+//     --advertise-tags=tag:db \
+//     --hostname=alphawise-1-db
+//
+//   sudo tailscale up \
+//     --authkey=tskey-auth-XXXX \
+//     --advertise-tags=tag:app \
+//     --hostname=alphawise-2-app
+// =============================================================================
+
+{
+  // ---------------------------------------------------------------------------
+  // TAG'LER — makinelerin rolleri
+  // ---------------------------------------------------------------------------
+  // Her tag'i "owner" (yönetici) tanımlamak zorundayız. Buradaki e-posta
+  // Tailscale hesabındaki gerçek admin kullanıcısı olmalı.
+  "tagOwners": {
+    "tag:db":    ["autogroup:admin"],
+    "tag:app":   ["autogroup:admin"],
+    "tag:admin": ["autogroup:admin"]
+  },
+
+  // ---------------------------------------------------------------------------
+  // HOST KISAYOLLARI  (opsiyonel — okunurluk için)
+  // ---------------------------------------------------------------------------
+  "hosts": {
+    // Boş bırakılabilir; Tailscale zaten hostname bazlı çözümleme yapıyor.
+  },
+
+  // ---------------------------------------------------------------------------
+  // ACL KURALLARI  (yukarıdan aşağı değerlendirilir; ilk eşleşen kural kazanır)
+  // ---------------------------------------------------------------------------
+  "acls": [
+    // -------------------------------------------------------------------------
+    // 1) ADMIN — her yere, her porta erişebilir (sadece kendi cihazlarından)
+    // -------------------------------------------------------------------------
+    {
+      "action": "accept",
+      "src":    ["autogroup:admin"],
+      "dst":    ["*:*"]
+    },
+
+    // -------------------------------------------------------------------------
+    // 2) APP → DB   (SADECE veri katmanı portları)
+    //    5432 = PostgreSQL / TimescaleDB
+    //    6379 = Redis
+    //    8000 = ChromaDB
+    // -------------------------------------------------------------------------
+    {
+      "action": "accept",
+      "src":    ["tag:app"],
+      "dst":    ["tag:db:5432", "tag:db:6379", "tag:db:8000"]
+    }
+
+    // -------------------------------------------------------------------------
+    // (Kural yok = DENY)
+    //   - DB → APP trafiği     :  YASAK   (init edilen tarafsa app'tir)
+    //   - APP → APP (yatay)    :  YASAK
+    //   - DB  → İnternet üzeri :  YASAK   (dış node'lardan gelirse)
+    //   - DB'nin diğer portları:  YASAK   (SSH hariç, aşağıdaki ssh bloğunda)
+    // -------------------------------------------------------------------------
+  ],
+
+  // ---------------------------------------------------------------------------
+  // TAILSCALE SSH — konsola girmek için (tailscale ssh alphawise-1-db)
+  // Klasik OpenSSH'i kapatıp sadece Tailscale SSH bırakmak en güvenlisi.
+  // ---------------------------------------------------------------------------
+  "ssh": [
+    {
+      "action":  "check",              // her seansta cihaz kimlik doğrulaması
+      "src":     ["autogroup:admin"],
+      "dst":     ["tag:db", "tag:app"],
+      "users":   ["ubuntu", "root"],
+      "checkPeriod": "12h"
+    }
+  ],
+
+  // ---------------------------------------------------------------------------
+  // NODE ATTRIBUTES — otomatik güncellemeleri kabul edelim
+  // ---------------------------------------------------------------------------
+  "nodeAttrs": [
+    {
+      "target": ["tag:db", "tag:app"],
+      "attr":   ["funnel"]             // (funnel = internete açma — burada yok)
+    }
+  ],
+
+  // ---------------------------------------------------------------------------
+  // ACL TESTLERİ  (kaydetmeden önce policy'yi doğrular)
+  // ---------------------------------------------------------------------------
+  "tests": [
+    {
+      // app, db'nin PostgreSQL portuna erişebilmeli
+      "src":    "tag:app",
+      "accept": ["tag:db:5432", "tag:db:6379", "tag:db:8000"]
+    },
+    {
+      // app, db'nin 22 veya rastgele bir portuna ERİŞEMEMELİ
+      "src":    "tag:app",
+      "deny":   ["tag:db:22", "tag:db:9999"]
+    },
+    {
+      // db → app trafiği tamamen kapalı olmalı
+      "src":    "tag:db",
+      "deny":   ["tag:app:80", "tag:app:443", "tag:app:8001"]
+    },
+    {
+      // admin her yere erişebilir
+      "src":    "autogroup:admin",
+      "accept": ["tag:db:5432", "tag:db:22", "tag:app:8001"]
+    }
+  ]
+}
