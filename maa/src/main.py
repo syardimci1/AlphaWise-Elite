@@ -430,6 +430,25 @@ async def decide_for_ticker(ticker: str):
             decision = "TUT"
             reason = f"Karisik veya notr sinyaller (skor: {total_score})"
 
+    # --- KARAR GUNLUGU: her karari decision_log tablosuna kaydet ---
+    try:
+        price_at_decision = None
+        taa_data = raw.get("taa", {})
+        if isinstance(taa_data, dict):
+            price_at_decision = taa_data.get("last_close")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO decision_log (ticker, decision, total_score, layer_scores, price_at_decision) VALUES (%s, %s, %s, %s, %s)",
+            (ticker, decision, total_score, json.dumps(scores), price_at_decision),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as log_error:
+        print(f"[decision_log] kayit hatasi (yanit etkilenmedi): {log_error}")
+
     return {
         "ticker": ticker,
         "decision": decision,
@@ -629,3 +648,116 @@ Sadece verilen veriye dayan, veri yetersizse belirt. Net ve eyleme donusturulebi
 
     except Exception as e:
         return {"tickers": portfolio_data, "error": str(e)}
+
+
+@app.post("/evaluate-decisions")
+async def evaluate_decisions(days_old: int = 30):
+    """
+    decision_log tablosunda en az `days_old` gun once verilmis ve henuz
+    degerlendirilmemis kararlari bulur, guncel fiyatla karsilastirip
+    was_correct/pct_change alanlarini doldurur.
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, ticker, decision, price_at_decision
+            FROM decision_log
+            WHERE evaluated_at IS NULL
+              AND price_at_decision IS NOT NULL
+              AND decided_at <= NOW() - INTERVAL '%s days'
+            """,
+            (days_old,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"error": f"veritabani okuma hatasi: {e}"}
+
+    if not rows:
+        return {"evaluated_count": 0, "message": "Degerlendirilecek yeterlilikte eski karar yok."}
+
+    unique_tickers = list(set(r[1] for r in rows))
+    current_prices = {}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for t in unique_tickers:
+            try:
+                resp = await client.get(f"{AGENTS['taa']}/analyze/{t}")
+                data = resp.json()
+                current_prices[t] = data.get("last_close")
+            except Exception:
+                current_prices[t] = None
+
+    updated = 0
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        for (row_id, ticker, decision, price_before) in rows:
+            price_now = current_prices.get(ticker)
+            if price_now is None or price_before is None or price_before == 0:
+                continue
+            pct_change = (float(price_now) - float(price_before)) / float(price_before)
+
+            if decision == "EKLE":
+                was_correct = pct_change > 0
+            elif decision == "DIKKAT ET":
+                was_correct = pct_change < 0
+            elif decision == "TUT":
+                was_correct = abs(pct_change) < 0.15
+            else:
+                was_correct = None
+
+            cur.execute(
+                """
+                UPDATE decision_log
+                SET price_after = %s, pct_change = %s, was_correct = %s, evaluated_at = NOW()
+                WHERE id = %s
+                """,
+                (price_now, round(pct_change, 4), was_correct, row_id),
+            )
+            updated += 1
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"error": f"veritabani yazma hatasi: {e}", "partial_updated": updated}
+
+    return {"evaluated_count": updated, "days_old_threshold": days_old}
+
+
+@app.get("/performance-report")
+def performance_report():
+    """Degerlendirilmis kararlarin karara gore isabet oranini ozetler."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT decision,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE was_correct = TRUE) AS correct_count,
+                   AVG(pct_change) AS avg_pct_change
+            FROM decision_log
+            WHERE evaluated_at IS NOT NULL AND was_correct IS NOT NULL
+            GROUP BY decision
+            """
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"error": str(e)}
+
+    report = {}
+    for (decision, total, correct_count, avg_pct) in rows:
+        accuracy = round((correct_count / total) * 100, 1) if total > 0 else None
+        report[decision] = {
+            "total_evaluated": total,
+            "correct_count": correct_count,
+            "accuracy_pct": accuracy,
+            "avg_pct_change": round(float(avg_pct), 4) if avg_pct is not None else None,
+        }
+
+    return {"performance_by_decision": report}
