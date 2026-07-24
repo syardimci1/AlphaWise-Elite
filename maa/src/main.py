@@ -91,6 +91,97 @@ def save_portfolio_tickers(payload: dict):
 
 PORTFOLIO_TICKERS = PORTFOLIO_TICKERS_DEFAULT
 
+FRED_API_KEY = os.getenv("FRED_API_KEY")
+FRED_SERIES = {
+    "fed_funds_rate": "FEDFUNDS",
+    "treasury_10y_yield": "DGS10",
+    "cpi_index": "CPIAUCSL",
+    "unemployment_rate": "UNRATE",
+}
+
+
+async def _fetch_fred_series(series_id: str):
+    if not FRED_API_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://api.stlouisfed.org/fred/series/observations",
+                params={
+                    "series_id": series_id,
+                    "api_key": FRED_API_KEY,
+                    "file_type": "json",
+                    "sort_order": "desc",
+                    "limit": 13,
+                },
+            )
+            data = resp.json()
+            obs = data.get("observations", [])
+            return obs
+    except Exception:
+        return None
+
+
+async def get_macro_context():
+    """
+    FRED'den makro ekonomik gostergeleri ceker. Redis'te 24 saat onbellekler
+    (bu veriler gunluk degismiyor, gereksiz API cagrisi onlenir).
+    """
+    cache_key = "macro_context_fred"
+    try:
+        r = get_redis_connection()
+        cached = r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    if not FRED_API_KEY:
+        return {"error": "FRED_API_KEY tanimli degil"}
+
+    result = {}
+
+    fed_obs = await _fetch_fred_series(FRED_SERIES["fed_funds_rate"])
+    if fed_obs:
+        result["fed_funds_rate_pct"] = float(fed_obs[0]["value"])
+
+    treasury_obs = await _fetch_fred_series(FRED_SERIES["treasury_10y_yield"])
+    if treasury_obs:
+        for o in treasury_obs:
+            if o["value"] != ".":
+                result["treasury_10y_yield_pct"] = float(o["value"])
+                break
+
+    cpi_obs = await _fetch_fred_series(FRED_SERIES["cpi_index"])
+    if cpi_obs and len(cpi_obs) >= 13:
+        try:
+            latest = float(cpi_obs[0]["value"])
+            year_ago = float(cpi_obs[12]["value"])
+            result["cpi_yoy_inflation_pct"] = round(((latest - year_ago) / year_ago) * 100, 2)
+        except Exception:
+            pass
+
+    unemployment_obs = await _fetch_fred_series(FRED_SERIES["unemployment_rate"])
+    if unemployment_obs:
+        result["unemployment_rate_pct"] = float(unemployment_obs[0]["value"])
+
+    result["source"] = "FRED (Federal Reserve Economic Data)"
+    result["note"] = "Aylik guncellenen resmi ABD makroekonomik gostergeleri"
+
+    try:
+        r = get_redis_connection()
+        r.setex(cache_key, 86400, json.dumps(result))
+    except Exception:
+        pass
+
+    return result
+
+
+@app.get("/macro-context")
+async def macro_context_endpoint():
+    """Guncel makro ekonomik baglami dondurur (Fed faizi, tahvil getirisi, enflasyon, issizlik)."""
+    return await get_macro_context()
+
 LEGAL_DISCLAIMER = (
     "YASAL UYARI: Bu icerik yatirim danismanligi degildir, ALPHAWISE lisansli bir "
     "yatirim danismani/araci kurum degildir. Burada sunulan tum sayilar gecmis verilere "
