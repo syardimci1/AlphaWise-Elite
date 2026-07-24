@@ -569,6 +569,7 @@ async def narrative(ticker: str):
         return {"error": "OPENROUTER_API_KEY tanimli degil (.env dosyasini kontrol edin)"}
 
     raw = await gather_agent_data(ticker)
+    macro = await get_macro_context()
 
     saa_data = raw.get("saa", {})
     news_details = saa_data.get("details", [])
@@ -576,6 +577,13 @@ async def narrative(ticker: str):
         f"- \"{n.get('title', '')}\" (etiket: {n.get('label', '')}, skor: {n.get('score', '')})"
         for n in news_details
     ]) if news_details else "Haber verisi yok."
+
+    macro_summary = (
+        f"Fed Faiz Orani: %{macro.get('fed_funds_rate_pct', 'N/A')}, "
+        f"10 Yillik Tahvil Getirisi: %{macro.get('treasury_10y_yield_pct', 'N/A')}, "
+        f"Yillik Enflasyon (TUFE): %{macro.get('cpi_yoy_inflation_pct', 'N/A')}, "
+        f"Issizlik Orani: %{macro.get('unemployment_rate_pct', 'N/A')}"
+    ) if not macro.get("error") else "Makro veri su an alinamadi."
 
     is_in_portfolio = ticker.upper() in PORTFOLIO_TICKERS
 
@@ -589,6 +597,11 @@ RISK ANALIZI (RAA): {json.dumps(raw.get('raa', {}), ensure_ascii=False)}
 DUYGU ANALIZI (SAA) - SKOR: {json.dumps({k: v for k, v in saa_data.items() if k != 'details'}, ensure_ascii=False)}
 DUYGU ANALIZI - GERCEK HABER BASLIKLARI:
 {news_summary}
+
+GUNCEL MAKRO EKONOMIK DURUM (ABD, FRED kaynakli):
+{macro_summary}
+(Bu makro veriyi analizine dahil et: yuksek faiz ortami buyume hisselerini ve REIT'leri
+baskilar, yuksek enflasyon tuketici harcamalarini etkiler, vs. - ilgili oldugu yerde belirt.)
 
 Bu hisse kullanicinin sabit 10 hisselik portfoyunde mi (JEPI, SCHD, O, NVDA, ASML, TSM, WDC, GOOGL, LLY, CAT): {is_in_portfolio}
 
