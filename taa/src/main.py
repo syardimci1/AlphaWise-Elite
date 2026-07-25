@@ -111,3 +111,59 @@ def analyze(ticker: str, period: str = "6mo"):
         "fibonacci_levels": fib_levels,
     }
     return latest
+
+
+import vectorbt as vbt
+
+
+@app.get("/backtest/{ticker}")
+def backtest_technical_strategy(ticker: str, period: str = "2y"):
+    """
+    TAA'nin kullandigi RSI+SMA kesisim mantigina dayali basit bir teknik
+    stratejiyi, GERCEK gecmis fiyat verisiyle geriye donuk test eder.
+
+    ONEMLI KAPSAM NOTU: Bu, sadece TEKNIK gostergelere (RSI, SMA) dayali bir
+    backtest'tir. FAA/RAA/SAA'nin (temel, risk, duygu) katkisini icermez,
+    cunku bu katmanlarin gecmise donuk (historical) hesaplama altyapisi
+    henuz yok. Yani bu, MAA'nin tam 4-katmanli kararinin degil, sadece
+    TAA'nin teknik mantiginin gecmis performansidir.
+    """
+    try:
+        data = yf.download(ticker, period=period, progress=False)
+        if data.empty:
+            return {"error": f"{ticker} icin veri bulunamadi"}
+
+        close = data["Close"]
+        if isinstance(close, type(data)):
+            close = close.iloc[:, 0]
+        close = close.dropna()
+
+        rsi = vbt.RSI.run(close, window=14).rsi
+        sma20 = vbt.MA.run(close, window=20).ma
+        sma50 = vbt.MA.run(close, window=50).ma
+
+        entries = (rsi < 30) & (sma20 > sma50)
+        exits = (rsi > 70) | (sma20 < sma50)
+
+        portfolio = vbt.Portfolio.from_signals(
+            close, entries, exits,
+            init_cash=10000, fees=0.001, freq="1D"
+        )
+
+        stats = portfolio.stats()
+
+        return {
+            "ticker": ticker,
+            "period": period,
+            "strategy": "RSI(14) < 30 VE SMA20 > SMA50 iken AL; RSI > 70 VEYA SMA20 < SMA50 iken SAT",
+            "scope_note": "Sadece teknik (TAA) mantigi test edildi, FAA/RAA/SAA dahil degil",
+            "initial_cash": 10000,
+            "final_value": round(float(stats.get("End Value", 0)), 2),
+            "total_return_pct": round(float(stats.get("Total Return [%]", 0)), 2),
+            "total_trades": int(stats.get("Total Trades", 0)),
+            "win_rate_pct": round(float(stats.get("Win Rate [%]", 0)), 2) if stats.get("Win Rate [%]") is not None else None,
+            "max_drawdown_pct": round(float(stats.get("Max Drawdown [%]", 0)), 2),
+            "sharpe_ratio": round(float(stats.get("Sharpe Ratio", 0)), 3) if stats.get("Sharpe Ratio") is not None else None,
+        }
+    except Exception as e:
+        return {"error": str(e)}
