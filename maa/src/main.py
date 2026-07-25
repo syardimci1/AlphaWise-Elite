@@ -91,6 +91,97 @@ def save_portfolio_tickers(payload: dict):
 
 PORTFOLIO_TICKERS = PORTFOLIO_TICKERS_DEFAULT
 
+FRED_API_KEY = os.getenv("FRED_API_KEY")
+FRED_SERIES = {
+    "fed_funds_rate": "FEDFUNDS",
+    "treasury_10y_yield": "DGS10",
+    "cpi_index": "CPIAUCSL",
+    "unemployment_rate": "UNRATE",
+}
+
+
+async def _fetch_fred_series(series_id: str):
+    if not FRED_API_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://api.stlouisfed.org/fred/series/observations",
+                params={
+                    "series_id": series_id,
+                    "api_key": FRED_API_KEY,
+                    "file_type": "json",
+                    "sort_order": "desc",
+                    "limit": 13,
+                },
+            )
+            data = resp.json()
+            obs = data.get("observations", [])
+            return obs
+    except Exception:
+        return None
+
+
+async def get_macro_context():
+    """
+    FRED'den makro ekonomik gostergeleri ceker. Redis'te 24 saat onbellekler
+    (bu veriler gunluk degismiyor, gereksiz API cagrisi onlenir).
+    """
+    cache_key = "macro_context_fred"
+    try:
+        r = get_redis_connection()
+        cached = r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    if not FRED_API_KEY:
+        return {"error": "FRED_API_KEY tanimli degil"}
+
+    result = {}
+
+    fed_obs = await _fetch_fred_series(FRED_SERIES["fed_funds_rate"])
+    if fed_obs:
+        result["fed_funds_rate_pct"] = float(fed_obs[0]["value"])
+
+    treasury_obs = await _fetch_fred_series(FRED_SERIES["treasury_10y_yield"])
+    if treasury_obs:
+        for o in treasury_obs:
+            if o["value"] != ".":
+                result["treasury_10y_yield_pct"] = float(o["value"])
+                break
+
+    cpi_obs = await _fetch_fred_series(FRED_SERIES["cpi_index"])
+    if cpi_obs and len(cpi_obs) >= 13:
+        try:
+            latest = float(cpi_obs[0]["value"])
+            year_ago = float(cpi_obs[12]["value"])
+            result["cpi_yoy_inflation_pct"] = round(((latest - year_ago) / year_ago) * 100, 2)
+        except Exception:
+            pass
+
+    unemployment_obs = await _fetch_fred_series(FRED_SERIES["unemployment_rate"])
+    if unemployment_obs:
+        result["unemployment_rate_pct"] = float(unemployment_obs[0]["value"])
+
+    result["source"] = "FRED (Federal Reserve Economic Data)"
+    result["note"] = "Aylik guncellenen resmi ABD makroekonomik gostergeleri"
+
+    try:
+        r = get_redis_connection()
+        r.setex(cache_key, 86400, json.dumps(result))
+    except Exception:
+        pass
+
+    return result
+
+
+@app.get("/macro-context")
+async def macro_context_endpoint():
+    """Guncel makro ekonomik baglami dondurur (Fed faizi, tahvil getirisi, enflasyon, issizlik)."""
+    return await get_macro_context()
+
 LEGAL_DISCLAIMER = (
     "YASAL UYARI: Bu icerik yatirim danismanligi degildir, ALPHAWISE lisansli bir "
     "yatirim danismani/araci kurum degildir. Burada sunulan tum sayilar gecmis verilere "
@@ -430,6 +521,25 @@ async def decide_for_ticker(ticker: str):
             decision = "TUT"
             reason = f"Karisik veya notr sinyaller (skor: {total_score})"
 
+    # --- KARAR GUNLUGU: her karari decision_log tablosuna kaydet ---
+    try:
+        price_at_decision = None
+        taa_data = raw.get("taa", {})
+        if isinstance(taa_data, dict):
+            price_at_decision = taa_data.get("last_close")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO decision_log (ticker, decision, total_score, layer_scores, price_at_decision) VALUES (%s, %s, %s, %s, %s)",
+            (ticker, decision, total_score, json.dumps(scores), price_at_decision),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as log_error:
+        print(f"[decision_log] kayit hatasi (yanit etkilenmedi): {log_error}")
+
     return {
         "ticker": ticker,
         "decision": decision,
@@ -459,6 +569,7 @@ async def narrative(ticker: str):
         return {"error": "OPENROUTER_API_KEY tanimli degil (.env dosyasini kontrol edin)"}
 
     raw = await gather_agent_data(ticker)
+    macro = await get_macro_context()
 
     saa_data = raw.get("saa", {})
     news_details = saa_data.get("details", [])
@@ -466,6 +577,13 @@ async def narrative(ticker: str):
         f"- \"{n.get('title', '')}\" (etiket: {n.get('label', '')}, skor: {n.get('score', '')})"
         for n in news_details
     ]) if news_details else "Haber verisi yok."
+
+    macro_summary = (
+        f"Fed Faiz Orani: %{macro.get('fed_funds_rate_pct', 'N/A')}, "
+        f"10 Yillik Tahvil Getirisi: %{macro.get('treasury_10y_yield_pct', 'N/A')}, "
+        f"Yillik Enflasyon (TUFE): %{macro.get('cpi_yoy_inflation_pct', 'N/A')}, "
+        f"Issizlik Orani: %{macro.get('unemployment_rate_pct', 'N/A')}"
+    ) if not macro.get("error") else "Makro veri su an alinamadi."
 
     is_in_portfolio = ticker.upper() in PORTFOLIO_TICKERS
 
@@ -479,6 +597,11 @@ RISK ANALIZI (RAA): {json.dumps(raw.get('raa', {}), ensure_ascii=False)}
 DUYGU ANALIZI (SAA) - SKOR: {json.dumps({k: v for k, v in saa_data.items() if k != 'details'}, ensure_ascii=False)}
 DUYGU ANALIZI - GERCEK HABER BASLIKLARI:
 {news_summary}
+
+GUNCEL MAKRO EKONOMIK DURUM (ABD, FRED kaynakli):
+{macro_summary}
+(Bu makro veriyi analizine dahil et: yuksek faiz ortami buyume hisselerini ve REIT'leri
+baskilar, yuksek enflasyon tuketici harcamalarini etkiler, vs. - ilgili oldugu yerde belirt.)
 
 Bu hisse kullanicinin sabit 10 hisselik portfoyunde mi (JEPI, SCHD, O, NVDA, ASML, TSM, WDC, GOOGL, LLY, CAT): {is_in_portfolio}
 
@@ -629,3 +752,116 @@ Sadece verilen veriye dayan, veri yetersizse belirt. Net ve eyleme donusturulebi
 
     except Exception as e:
         return {"tickers": portfolio_data, "error": str(e)}
+
+
+@app.post("/evaluate-decisions")
+async def evaluate_decisions(days_old: int = 30):
+    """
+    decision_log tablosunda en az `days_old` gun once verilmis ve henuz
+    degerlendirilmemis kararlari bulur, guncel fiyatla karsilastirip
+    was_correct/pct_change alanlarini doldurur.
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, ticker, decision, price_at_decision
+            FROM decision_log
+            WHERE evaluated_at IS NULL
+              AND price_at_decision IS NOT NULL
+              AND decided_at <= NOW() - INTERVAL '%s days'
+            """,
+            (days_old,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"error": f"veritabani okuma hatasi: {e}"}
+
+    if not rows:
+        return {"evaluated_count": 0, "message": "Degerlendirilecek yeterlilikte eski karar yok."}
+
+    unique_tickers = list(set(r[1] for r in rows))
+    current_prices = {}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for t in unique_tickers:
+            try:
+                resp = await client.get(f"{AGENTS['taa']}/analyze/{t}")
+                data = resp.json()
+                current_prices[t] = data.get("last_close")
+            except Exception:
+                current_prices[t] = None
+
+    updated = 0
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        for (row_id, ticker, decision, price_before) in rows:
+            price_now = current_prices.get(ticker)
+            if price_now is None or price_before is None or price_before == 0:
+                continue
+            pct_change = (float(price_now) - float(price_before)) / float(price_before)
+
+            if decision == "EKLE":
+                was_correct = pct_change > 0
+            elif decision == "DIKKAT ET":
+                was_correct = pct_change < 0
+            elif decision == "TUT":
+                was_correct = abs(pct_change) < 0.15
+            else:
+                was_correct = None
+
+            cur.execute(
+                """
+                UPDATE decision_log
+                SET price_after = %s, pct_change = %s, was_correct = %s, evaluated_at = NOW()
+                WHERE id = %s
+                """,
+                (price_now, round(pct_change, 4), was_correct, row_id),
+            )
+            updated += 1
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"error": f"veritabani yazma hatasi: {e}", "partial_updated": updated}
+
+    return {"evaluated_count": updated, "days_old_threshold": days_old}
+
+
+@app.get("/performance-report")
+def performance_report():
+    """Degerlendirilmis kararlarin karara gore isabet oranini ozetler."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT decision,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE was_correct = TRUE) AS correct_count,
+                   AVG(pct_change) AS avg_pct_change
+            FROM decision_log
+            WHERE evaluated_at IS NOT NULL AND was_correct IS NOT NULL
+            GROUP BY decision
+            """
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return {"error": str(e)}
+
+    report = {}
+    for (decision, total, correct_count, avg_pct) in rows:
+        accuracy = round((correct_count / total) * 100, 1) if total > 0 else None
+        report[decision] = {
+            "total_evaluated": total,
+            "correct_count": correct_count,
+            "accuracy_pct": accuracy,
+            "avg_pct_change": round(float(avg_pct), 4) if avg_pct is not None else None,
+        }
+
+    return {"performance_by_decision": report}
