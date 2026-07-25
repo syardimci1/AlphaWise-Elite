@@ -7,8 +7,126 @@ import psycopg2
 import redis
 import os
 from dotenv import load_dotenv
+import requests
+from datetime import datetime, timedelta
 
 load_dotenv()
+
+
+def _period_to_dates(period: str):
+    days_map = {"1mo": 31, "3mo": 91, "6mo": 182, "1y": 365, "5y": 365 * 5}
+    days = days_map.get(period, 365)
+    end = datetime.utcnow().date()
+    start = end - timedelta(days=days)
+    return start.isoformat(), end.isoformat()
+
+
+def _fetch_from_tiingo(ticker: str, period: str):
+    api_key = os.getenv("TIINGO_API_KEY")
+    if not api_key:
+        return None
+    start, end = _period_to_dates(period)
+    try:
+        resp = requests.get(
+            f"https://api.tiingo.com/tiingo/daily/{ticker}/prices",
+            params={"startDate": start, "endDate": end, "token": api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            return None
+        df = pd.DataFrame(data)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+        df = df.rename(columns={"close": "Close"})
+        return df[["Close"]]
+    except Exception:
+        return None
+
+
+def _fetch_from_polygon(ticker: str, period: str):
+    api_key = os.getenv("POLYGON_API_KEY")
+    if not api_key:
+        return None
+    start, end = _period_to_dates(period)
+    try:
+        resp = requests.get(
+            f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}",
+            params={"apiKey": api_key, "adjusted": "true", "sort": "asc", "limit": 5000},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results")
+        if not results:
+            return None
+        df = pd.DataFrame(results)
+        df["date"] = pd.to_datetime(df["t"], unit="ms")
+        df = df.set_index("date").sort_index()
+        df = df.rename(columns={"c": "Close"})
+        return df[["Close"]]
+    except Exception:
+        return None
+
+
+def _fetch_from_alphavantage(ticker: str, period: str):
+    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    if not api_key:
+        return None
+    try:
+        resp = requests.get(
+            "https://www.alphavantage.co/query",
+            params={
+                "function": "TIME_SERIES_DAILY",
+                "symbol": ticker,
+                "outputsize": "full" if period == "5y" else "compact",
+                "apikey": api_key,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        series = data.get("Time Series (Daily)")
+        if not series:
+            return None
+        df = pd.DataFrame(series).T
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
+        df = df.rename(columns={"4. close": "Close"})
+        df["Close"] = df["Close"].astype(float)
+        start, end = _period_to_dates(period)
+        df = df[(df.index >= start) & (df.index <= end)]
+        return df[["Close"]]
+    except Exception:
+        return None
+
+
+def fetch_ohlcv_with_fallback(ticker: str, period: str):
+    """
+    Veri kaynagi zinciri: yfinance -> Tiingo -> Polygon.io -> Alpha Vantage.
+    Ilk basarili olan kaynaktan (Close kolonu iceren) DataFrame ve kaynak adini dondurur.
+    """
+    try:
+        data = yf.download(ticker, period=period, progress=False)
+        if not data.empty:
+            return data, "yfinance"
+    except Exception:
+        pass
+
+    df = _fetch_from_tiingo(ticker, period)
+    if df is not None and not df.empty:
+        return df, "tiingo"
+
+    df = _fetch_from_polygon(ticker, period)
+    if df is not None and not df.empty:
+        return df, "polygon"
+
+    df = _fetch_from_alphavantage(ticker, period)
+    if df is not None and not df.empty:
+        return df, "alpha_vantage"
+
+    return None, None
 
 app = FastAPI(title="ALPHAWISE - RAA (Risk Analysis Agent)")
 
@@ -28,6 +146,72 @@ def get_redis_connection():
         password=os.getenv("REDIS_PASSWORD"),
         decode_responses=True,
     )
+
+from nixtla import NixtlaClient
+
+TIMEGPT_API_KEY = os.getenv("TIMEGPT_API_KEY")
+
+
+@app.get("/forecast/{ticker}")
+def forecast_price(ticker: str, horizon_days: int = 30):
+    """
+    TimeGPT (Nixtla) kullanarak, gecmis 1 yillik fiyat verisine dayali,
+    gelecek `horizon_days` gun icin istatistiksel bir fiyat tahmini uretir.
+    Guven araligi (%80) dahildir - bu bir garanti degil, olasilik araligidir.
+    """
+    if not TIMEGPT_API_KEY:
+        return {"error": "TIMEGPT_API_KEY tanimli degil"}
+
+    try:
+        data = yf.download(ticker, period="1y", progress=False)
+        if data.empty:
+            return {"error": f"{ticker} icin veri bulunamadi"}
+
+        close = data["Close"]
+        if hasattr(close, "iloc") and len(close.shape) > 1:
+            close = close.iloc[:, 0]
+        close = close.dropna()
+
+        # Tam is gunu takvimine gore yeniden indeksle, tatil bosluklarini
+        # bir onceki gunun fiyatiyla doldur (TimeGPT bosluksuz seri istiyor)
+        full_bdays = pd.date_range(start=close.index.min(), end=close.index.max(), freq="B")
+        close = close.reindex(full_bdays).ffill()
+
+        df = pd.DataFrame({
+            "unique_id": ticker,
+            "ds": close.index,
+            "y": close.values,
+        })
+
+        client = NixtlaClient(api_key=TIMEGPT_API_KEY)
+        forecast = client.forecast(
+            df=df, h=horizon_days, level=[80], freq="B",
+            time_col="ds", target_col="y", id_col="unique_id",
+            model="timegpt-1",
+        )
+
+        last_row = forecast.iloc[-1]
+        first_row = forecast.iloc[0]
+
+        return {
+            "ticker": ticker,
+            "horizon_days": horizon_days,
+            "current_price": round(float(close.iloc[-1]), 2),
+            "forecast_first_day": {
+                "date": str(first_row["ds"])[:10],
+                "predicted": round(float(first_row["TimeGPT"]), 2),
+            },
+            "forecast_last_day": {
+                "date": str(last_row["ds"])[:10],
+                "predicted": round(float(last_row["TimeGPT"]), 2),
+                "lower_80pct": round(float(last_row.get("TimeGPT-lo-80", 0)), 2),
+                "upper_80pct": round(float(last_row.get("TimeGPT-hi-80", 0)), 2),
+            },
+            "disclaimer": "Bu istatistiksel bir tahmindir, yatirim tavsiyesi degildir. Gercek fiyat bu araligin disinda da olusabilir.",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.get("/health")
 def health():
@@ -53,9 +237,9 @@ def health():
 
 @app.get("/analyze/{ticker}")
 def analyze(ticker: str, period: str = "1y"):
-    data = yf.download(ticker, period=period, progress=False)
-    if data.empty:
-        return {"error": f"{ticker} için veri bulunamadı"}
+    data, data_source = fetch_ohlcv_with_fallback(ticker, period)
+    if data is None or data.empty:
+        return {"error": f"{ticker} için veri bulunamadı (tum kaynaklar denendi: yfinance/tiingo/polygon/alpha_vantage)"}
 
     close = data["Close"].values.flatten().astype(float)
     returns = np.diff(close) / close[:-1]
@@ -95,8 +279,8 @@ def analyze(ticker: str, period: str = "1y"):
     long_term_years_used = None
 
     try:
-        hist5y = yf.download(ticker, period="5y", progress=False)
-        if not hist5y.empty and len(hist5y) > 252:
+        hist5y, _ = fetch_ohlcv_with_fallback(ticker, "5y")
+        if hist5y is not None and not hist5y.empty and len(hist5y) > 252:
             close5y = hist5y["Close"].values.flatten().astype(float)
             years_available = len(close5y) / 252.0
             start_price = float(close5y[0])
@@ -123,6 +307,7 @@ def analyze(ticker: str, period: str = "1y"):
 
     return {
         "ticker": ticker,
+        "data_source": data_source,
         "period": period,
         "annualized_volatility": round(volatility, 4),
         "annualized_return": round(mean_return_annual, 4),
