@@ -36,6 +36,52 @@ def get_redis_connection():
         decode_responses=True,
     )
 
+CHRONOS_URL = "http://chronos:8000"
+MARKET_DATA_URL_MAA = "http://market-data:8000"
+
+
+async def fetch_chronos_forecast(ticker: str):
+    """Chronos'tan 5 gunluk fiyat tahmini alir. Fiyat gecmisini merkezi
+    market-data servisinden ceker (Fatih Bora onerisi geregi kurulan
+    merkezi kaynak - burada da tekrar kullaniliyor)."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            price_resp = await client.get(f"{MARKET_DATA_URL_MAA}/price/{ticker}", params={"limit": 60})
+            price_data = price_resp.json()
+            rows = price_data.get("data", [])
+            if len(rows) < 10:
+                return {"error": "yetersiz fiyat gecmisi"}
+            closes = [float(r["close"]) for r in rows]
+
+            forecast_resp = await client.post(
+                f"{CHRONOS_URL}/forecast",
+                json={"prices": closes, "prediction_length": 5},
+            )
+            return forecast_resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def score_chronos(data):
+    """Chronos'un 5-gunluk ortalama tahminini skora cevirir.
+    Beklenen degisim %1'in ustundeyse anlamli sayilir."""
+    if not data or "error" in data:
+        return None
+    mean_forecast = data.get("mean_forecast")
+    if not mean_forecast or len(mean_forecast) < 1:
+        return None
+    current = mean_forecast[0]
+    future = mean_forecast[-1]
+    if not current:
+        return None
+    pct_change = (future - current) / current
+    if pct_change > 0.01:
+        return 1
+    elif pct_change < -0.01:
+        return -1
+    return 0
+
+
 AGENTS = {
     "taa": os.getenv("TAA_URL"),
     "faa": os.getenv("FAA_URL"),
@@ -469,19 +515,23 @@ def score_saa(data):
 
 
 async def gather_agent_data(ticker: str):
-    raw = {}
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        for name in ["taa", "faa", "raa", "saa"]:
-            url = AGENTS[name]
+    async def _fetch_one(name):
+        url = AGENTS[name]
+        async with httpx.AsyncClient(timeout=20.0) as client:
             try:
                 if name == "saa":
                     resp = await client.get(f"{url}/analyze/{ticker}", params={"max_news": 5})
                 else:
                     resp = await client.get(f"{url}/analyze/{ticker}")
-                raw[name] = resp.json()
+                return name, resp.json()
             except Exception as e:
-                raw[name] = {"error": str(e)}
-    return raw
+                return name, {"error": str(e)}
+
+    results = await asyncio.gather(*[_fetch_one(n) for n in ["taa", "faa", "raa", "saa"]])
+    data_dict = {name: data for name, data in results}
+    # Chronos farkli API sekli (ticker degil fiyat listesi) oldugu icin ayri cagriliyor
+    data_dict["chronos"] = await fetch_chronos_forecast(ticker)
+    return data_dict
 
 
 SCORE_MEANINGS = {
@@ -500,6 +550,7 @@ async def decide_for_ticker(ticker: str):
         "faa": score_faa(raw.get("faa")),
         "raa": score_raa(raw.get("raa")),
         "saa": score_saa(raw.get("saa")),
+        "chronos": score_chronos(raw.get("chronos")),
     }
 
     valid_scores = {k: v for k, v in scores.items() if v is not None}
@@ -539,6 +590,24 @@ async def decide_for_ticker(ticker: str):
         conn.close()
     except Exception as log_error:
         print(f"[decision_log] kayit hatasi (yanit etkilenmedi): {log_error}")
+
+    # --- COGNEE: uzun-vadeli hafizaya kaydet (grafiktabanli, gecmis kararlar icin) ---
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cognee_client:
+            faa_data = raw.get("faa", {}) if isinstance(raw.get("faa"), dict) else {}
+            company_name = faa_data.get("company_name") or "bilinmeyen sirket"
+            sector = faa_data.get("sector") or ""
+            memory_text = (
+                f"Hisse senedi sembolu {ticker} ({company_name}, sektor: {sector}) "
+                f"icin {decision} karari verildi (skor: {total_score}). "
+                f"Katman skorlari: {scores}."
+            )
+            await cognee_client.post(
+                "http://cognee:8000/remember",
+                json={"text": memory_text, "dataset": "alphawise_decisions"},
+            )
+    except Exception as cognee_error:
+        print(f"[cognee] kayit hatasi (yanit etkilenmedi): {cognee_error}")
 
     return {
         "ticker": ticker,
@@ -865,3 +934,125 @@ def performance_report():
         }
 
     return {"performance_by_decision": report}
+
+
+@app.get("/narrative-verified/{ticker}")
+async def narrative_verified(ticker: str):
+    """
+    3 asamali kaskad (Analyst->Critic->Master) + Anayasa v4.4 filtresi +
+    LLMQuant (13F kurumsal sahiplik + likidite) ile zenginlestirilmis analiz.
+    """
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.dirname(__file__))
+    from llmquant_client import get_13f_holders, get_liquidity_context
+    from cascade import run_cascade
+
+    is_in_portfolio = ticker.upper() in PORTFOLIO_TICKERS
+
+    raw, macro, holders, liquidity = await asyncio.gather(
+        gather_agent_data(ticker),
+        get_macro_context(),
+        get_13f_holders(ticker),
+        get_liquidity_context(),
+    )
+    llmquant_data = {"institutional_holders": holders, "liquidity": liquidity}
+
+    result = await run_cascade(ticker, raw, macro, llmquant_data, is_in_portfolio)
+    return result
+
+
+FINRL_SIGNAL_URL = "http://finrl-signal:8000"
+
+
+@app.get("/portfolio-signal/{strategy}")
+async def portfolio_signal(strategy: str):
+    """
+    FinRL-X'in portfoy-bazli (hisse-bazli degil) rotasyon sinyalini getirir.
+    God Mode ilkesi: SADECE SINYAL, gercek islem yapmaz.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            resp = await client.get(f"{FINRL_SIGNAL_URL}/signal/{strategy}")
+            data = resp.json()
+    except Exception as e:
+        return {"error": str(e), "strategy": strategy}
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO decision_log (ticker, decision, total_score, layer_scores, price_at_decision) VALUES (%s, %s, %s, %s, %s)",
+            (
+                f"PORTFOLIO_{strategy}",
+                data.get("signal", {}).get("market_regime", "unknown"),
+                None,
+                json.dumps(data.get("signal", {})),
+                None,
+            ),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as log_error:
+        print(f"[portfolio_signal log] kayit hatasi: {log_error}")
+
+    return data
+
+
+COGNEE_URL_MAA = "http://cognee:8000"
+
+
+@app.get("/memory/{ticker}")
+async def memory_query(ticker: str):
+    """
+    Bir hisse icin gecmis kararlarin hafizada ne dedigini getirir.
+    Cognee'nin CHUNKS modu kullanilir (halusinasyon-dirençli, sadece
+    gercekten kaydedilen metni dondurur, LLM yorumu katmaz).
+    Ham Python-dict-repr yanitini frontend icin temiz metin listesine cevirir.
+    """
+    import re
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{COGNEE_URL_MAA}/recall",
+                json={"query": ticker, "dataset": "alphawise_decisions"},
+            )
+            raw = resp.json()
+    except Exception as e:
+        return {"error": str(e), "ticker": ticker}
+
+    clean_texts = []
+    for item in raw.get("results", []):
+        dataset_match = re.search(r"'dataset_name':\s*'([^']*)'", item)
+        dataset_name = dataset_match.group(1) if dataset_match else "bilinmiyor"
+        # 'text': '...' kaliplarini bul (tek/cift tirnak, kacis karakterleri dahil)
+        text_matches = re.findall(r"'text':\s*(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*')", item)
+        for tm in text_matches:
+            try:
+                text = eval(tm)  # sadece string literal'i cozer, guvenli (regex zaten string'e sinirlandi)
+                clean_texts.append({"dataset": dataset_name, "text": text})
+            except Exception:
+                continue
+
+    return {"ticker": ticker, "memories": clean_texts}
+
+
+MARKET_HOURS_URL = "http://market-hours:8000"
+
+
+async def get_market_status(market: str):
+    """market: 'us' ya da 'bist'. Piyasanin su an acik/kapali oldugunu getirir."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{MARKET_HOURS_URL}/market-status/{market}")
+            return resp.json()
+    except Exception as e:
+        return {"error": str(e), "is_open": None}
+
+
+@app.get("/market-status/{market}")
+async def market_status_proxy(market: str):
+    """Frontend'in dogrudan cagirabilecegi vekil endpoint."""
+    return await get_market_status(market)

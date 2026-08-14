@@ -1,0 +1,10 @@
+use_default_settings: true
+
+server:
+  secret_key: "alphawise_searxng_secret_key_change_if_needed_2026"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json

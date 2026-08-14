@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+chronos-forecasting
+torch
+pandas

@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+httpx
+newspaper4k
+trafilatura
+lxml_html_clean

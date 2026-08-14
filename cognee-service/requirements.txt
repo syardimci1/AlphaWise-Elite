@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+cognee
+python-dotenv
+fastembed

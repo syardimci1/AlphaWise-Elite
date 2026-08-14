@@ -1,0 +1,186 @@
+services:
+  taa:
+    build: ./taa
+    container_name: alphawise-taa
+    restart: unless-stopped
+    env_file: ./taa/.env
+    ports:
+      - "127.0.0.1:8001:8000"
+
+  faa:
+    build: ./faa
+    container_name: alphawise-faa
+    restart: unless-stopped
+    env_file: ./faa/.env
+    ports:
+      - "127.0.0.1:8002:8000"
+
+  raa:
+    build: ./raa
+    container_name: alphawise-raa
+    restart: unless-stopped
+    env_file: ./raa/.env
+    ports:
+      - "127.0.0.1:8003:8000"
+
+  saa:
+    build: ./saa
+    container_name: alphawise-saa
+    restart: unless-stopped
+    env_file: ./saa/.env
+    ports:
+      - "127.0.0.1:8004:8000"
+
+  maa:
+    build: ./maa
+    container_name: alphawise-maa
+    restart: unless-stopped
+    env_file: ./maa/.env
+    ports:
+      - "127.0.0.1:8005:8000"
+
+  rag:
+    build: ./rag
+    container_name: alphawise-rag
+    restart: unless-stopped
+    env_file: ./rag/.env
+    volumes:
+      - /opt/alphawise/commercial/alphawise-knowledge-base:/data:ro
+    ports:
+      - "127.0.0.1:8010:8000"
+
+  frontend:
+    build: ./frontend
+    container_name: alphawise-frontend
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:3000:3000"
+
+  openbb:
+    build: ./openbb-service
+    container_name: alphawise-openbb
+    env_file: ./openbb-service/.env
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8040:8000"
+
+  qlib:
+    build: ./qlib-service
+    env_file: ./qlib-service/.env
+    volumes:
+      - ./qlib-service/csv_data_persistent:/app/csv_data
+      - ./qlib-service/models_persistent:/app/models
+      - ./qlib-service/qlib_bin_data_persistent:/app/qlib_bin_data
+      - ./qlib-service/data_prep:/app/data_prep
+    container_name: alphawise-qlib
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8050:8000"
+
+  finbert:
+    build: ./finbert-service
+    container_name: alphawise-finbert
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8070:8000"
+
+  signal-ledger:
+    build: ./signal-ledger
+    container_name: alphawise-signal-ledger
+    restart: unless-stopped
+    env_file: ./signal-ledger/.env
+    ports:
+      - "127.0.0.1:8080:8000"
+
+  oanda:
+    build: ./oanda-service
+    container_name: alphawise-oanda
+    restart: unless-stopped
+    env_file: ./oanda-service/.env
+    ports:
+      - "127.0.0.1:8090:8000"
+
+  news-monitor:
+    build: ./news-monitor
+    container_name: alphawise-news-monitor
+    restart: unless-stopped
+    env_file: ./news-monitor/.env
+    ports:
+      - "127.0.0.1:8100:8000"
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: alphawise-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng-data:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8110/
+    ports:
+      - "127.0.0.1:8110:8080"
+
+  research:
+    build: ./research-service
+    container_name: alphawise-research
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8120:8000"
+
+  cognee:
+    build: ./cognee-service
+    container_name: alphawise-cognee
+    restart: unless-stopped
+    env_file: ./cognee-service/.env
+    volumes:
+      - ./cognee-service/cognee_data_persistent:/app/cognee_data
+    ports:
+      - "127.0.0.1:8130:8000"
+
+  chronos:
+    build: ./chronos-service
+    container_name: alphawise-chronos
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8140:8000"
+
+  model-watcher:
+    build: ./model-watcher
+    container_name: alphawise-model-watcher
+    restart: unless-stopped
+    env_file: ./model-watcher/.env
+    volumes:
+      - ./model-watcher-data:/app/data
+    ports:
+      - "127.0.0.1:8150:8000"
+
+  market-data:
+    build: ./market-data-service
+    container_name: alphawise-market-data
+    restart: unless-stopped
+    env_file: ./market-data-service/.env
+    volumes:
+      - ./qlib-service/csv_data_persistent:/app/csv_data
+    ports:
+      - "127.0.0.1:8160:8000"
+
+  finrl-signal:
+    build: ./finrl-signal-api
+    container_name: alphawise-finrl-signal
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/alphawise/commercial/AlphaWise-Elite/finrl-x:/opt/alphawise/commercial/AlphaWise-Elite/finrl-x
+    ports:
+      - "127.0.0.1:8170:8000"
+
+  market-hours:
+    build: ./market-hours-service
+    container_name: alphawise-market-hours
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8180:8000"
+
+networks:
+  default:
+    name: alphawise-net
+    external: true

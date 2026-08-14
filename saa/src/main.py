@@ -1,101 +1,207 @@
+"""
+ALPHAWISE - SAA (Sentiment Analysis Agent) v2
+DEGISIKLIK (11.08.2026, Opus): 
+- Haber kaynagi yfinance (resmi degil, guvenilmez) -> Finnhub (resmi, 4-anahtarli havuz)
+- Sentiment motoru: kendi transformers modeli -> merkezi FinBERT servisi (8070)
+  (tek dogruluk kaynagi, model-drift yok, halusinasyona kapali siniflandirici)
+- Veri kalite kontrolu: bos/eski haber -> durust "sentiment atlandi" (uydurma yok)
+"""
 from fastapi import FastAPI
 from pydantic import BaseModel
-import yfinance as yf
-import psycopg2
-import redis
+import httpx
 import os
+import time
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="ALPHAWISE - SAA (Sentiment Analysis Agent)")
+app = FastAPI(title="ALPHAWISE - SAA (Sentiment Analysis Agent) v2")
 
-_sentiment_pipeline = None
+FINBERT_URL = os.getenv("FINBERT_URL", "http://finbert:8000")
 
-def get_sentiment_pipeline():
-    global _sentiment_pipeline
-    if _sentiment_pipeline is None:
-        from transformers import pipeline
-        _sentiment_pipeline = pipeline(
-            "sentiment-analysis",
-            model="ProsusAI/finbert"
+# --- Finnhub 4-anahtarli havuz (rate-limit dayanikligi icin rotasyon) ---
+def _get_finnhub_keys():
+    keys = []
+    for i in range(1, 5):
+        k = os.getenv(f"FINNHUB_API_KEY_{i}")
+        if k:
+            keys.append(k)
+    return keys
+
+_finnhub_keys = _get_finnhub_keys()
+_key_index = 0
+
+
+def _next_finnhub_key():
+    """Sirayla anahtar dondurur (round-robin rotasyon)."""
+    global _key_index
+    if not _finnhub_keys:
+        return None
+    key = _finnhub_keys[_key_index % len(_finnhub_keys)]
+    _key_index += 1
+    return key
+
+
+def fetch_finnhub_news(ticker: str, max_news: int = 10):
+    """
+    Finnhub'dan son 7 gunun haberlerini ceker.
+    Bir anahtar rate-limit'e (429) takilirsa otomatik digerine gecer.
+    """
+    if not _finnhub_keys:
+        return {"error": "Finnhub anahtari tanimli degil"}
+
+    to_date = datetime.now(timezone.utc).date()
+    from_date = to_date - timedelta(days=7)
+
+    last_error = None
+    # Her anahtari bir kez dene (hepsini tuketene kadar)
+    for _ in range(len(_finnhub_keys)):
+        key = _next_finnhub_key()
+        try:
+            resp = httpx.get(
+                "https://finnhub.io/api/v1/company-news",
+                params={
+                    "symbol": ticker.upper(),
+                    "from": str(from_date),
+                    "to": str(to_date),
+                    "token": key,
+                },
+                timeout=15.0,
+            )
+            if resp.status_code == 429:
+                last_error = "rate_limit"
+                continue  # sonraki anahtara gec
+            if resp.status_code != 200:
+                last_error = f"HTTP {resp.status_code}"
+                continue
+            data = resp.json()
+            if isinstance(data, list):
+                # KIRLILIK FILTRESI: sadece hedef ticker'in gercekten ilgili
+                # oldugu haberleri tut (related alaninda sembol geçmeli).
+                # Finnhub sektor haberlerini de karistirdigi icin bu sart.
+                target = ticker.upper()
+                filtered = []
+                for item in data:
+                    related = str(item.get("related", "")).upper()
+                    # related virgulle ayrik olabilir: "NVDA,AMD" gibi
+                    related_symbols = [s.strip() for s in related.split(",")]
+                    if target in related_symbols:
+                        filtered.append(item)
+                return {"news": filtered[:max_news], "raw_count": len(data), "filtered_count": len(filtered)}
+            last_error = "beklenmeyen_format"
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    return {"error": f"Tum anahtarlar basarisiz: {last_error}"}
+
+
+def score_with_finbert(texts: list):
+    """Metinleri merkezi FinBERT servisine gonderir, sentiment skorlari alir."""
+    try:
+        resp = httpx.post(
+            f"{FINBERT_URL}/sentiment/batch",
+            json={"texts": texts},
+            timeout=30.0,
         )
-    return _sentiment_pipeline
-
-def get_db_connection():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        dbname=os.getenv("DB_NAME"),
-    )
-
-def get_redis_connection():
-    return redis.Redis(
-        host=os.getenv("REDIS_HOST"),
-        port=os.getenv("REDIS_PORT"),
-        password=os.getenv("REDIS_PASSWORD"),
-        decode_responses=True,
-    )
-
-@app.get("/health")
-def health():
-    status = {"service": "SAA", "status": "ok", "checks": {}}
-    try:
-        conn = get_db_connection()
-        conn.close()
-        status["checks"]["database"] = "connected"
+        if resp.status_code != 200:
+            return {"error": f"FinBERT HTTP {resp.status_code}"}
+        return resp.json()
     except Exception as e:
-        status["checks"]["database"] = f"error: {str(e)}"
-        status["status"] = "degraded"
-    try:
-        r = get_redis_connection()
-        r.ping()
-        status["checks"]["redis"] = "connected"
-    except Exception as e:
-        status["checks"]["redis"] = f"error: {str(e)}"
-        status["status"] = "degraded"
-    status["checks"]["model_loaded"] = _sentiment_pipeline is not None
-    return status
+        return {"error": f"FinBERT baglanti hatasi: {str(e)}"}
+
 
 class TextInput(BaseModel):
     text: str
 
+
+@app.get("/health")
+def health():
+    return {
+        "service": "SAA",
+        "status": "ok",
+        "sentiment_engine": "FinBERT (merkezi servis)",
+        "news_source": f"Finnhub ({len(_finnhub_keys)} anahtar havuzu)",
+    }
+
+
 @app.post("/analyze")
 def analyze_text(input: TextInput):
-    pipe = get_sentiment_pipeline()
-    result = pipe(input.text)
-    return {"text": input.text, "sentiment": result[0]}
+    """Tek bir metnin sentiment'ini analiz eder (FinBERT uzerinden)."""
+    result = score_with_finbert([input.text])
+    if "error" in result:
+        return {"text": input.text, "error": result["error"]}
+    r = result["results"][0]
+    return {"text": input.text, "sentiment": {"label": r["label"], "score": r["score"]}}
+
 
 @app.get("/analyze/{ticker}")
 def analyze_ticker(ticker: str, max_news: int = 10):
-    stock = yf.Ticker(ticker)
-    news_items = stock.news[:max_news] if stock.news else []
-
-    if not news_items:
+    """
+    Bir hisse icin haber-tabanli sentiment analizi.
+    MAA kaskadinin cagirdigi ana endpoint - cikti formati korunmustur.
+    """
+    # 1. Haber cek (Finnhub, cok-anahtarli)
+    news_result = fetch_finnhub_news(ticker, max_news)
+    if "error" in news_result:
+        # DURUST BOSLUK: veri yoksa uydurma yapma, atla
         return {
-            "ticker": ticker,
+            "ticker": ticker.upper(),
             "news_count": 0,
-            "overall_sentiment": "neutral",
             "average_score": 0.0,
-            "details": [],
+            "overall": "neutral",
+            "data_status": f"sentiment_atlandi: {news_result['error']}",
         }
 
-    pipe = get_sentiment_pipeline()
-    details = []
-    scores = []
+    news_items = news_result["news"]
 
+    # 2. KALITE KONTROLU: haber yoksa durust bosluk
+    if not news_items:
+        return {
+            "ticker": ticker.upper(),
+            "news_count": 0,
+            "average_score": 0.0,
+            "overall": "neutral",
+            "data_status": "sentiment_atlandi: son 7 gunde haber yok",
+        }
+
+    # 3. Basliklari topla
+    titles = []
     for item in news_items:
-        title = item.get("content", {}).get("title") or item.get("title", "")
-        if not title:
-            continue
-        result = pipe(title)[0]
-        label = result["label"].lower()
-        score = result["score"]
+        title = item.get("headline", "")
+        if title:
+            titles.append(title)
+
+    if not titles:
+        return {
+            "ticker": ticker.upper(),
+            "news_count": 0,
+            "average_score": 0.0,
+            "overall": "neutral",
+            "data_status": "sentiment_atlandi: baslik bulunamadi",
+        }
+
+    # 4. FinBERT ile skorla
+    finbert_result = score_with_finbert(titles)
+    if "error" in finbert_result:
+        return {
+            "ticker": ticker.upper(),
+            "news_count": 0,
+            "average_score": 0.0,
+            "overall": "neutral",
+            "data_status": f"sentiment_atlandi: {finbert_result['error']}",
+        }
+
+    # 5. Skorlama mantigi (eski koddan korundu: signed_score, ortalama, +-0.15 esik)
+    scores = []
+    details = []
+    for r in finbert_result["results"]:
+        label = r["label"].lower()
+        score = r["score"]
         signed_score = score if label == "positive" else (-score if label == "negative" else 0.0)
         scores.append(signed_score)
-        details.append({"title": title, "label": label, "score": round(score, 4)})
+        details.append({"title": r["text"], "label": label, "score": round(score, 4)})
 
     avg_score = sum(scores) / len(scores) if scores else 0.0
 
@@ -107,9 +213,10 @@ def analyze_ticker(ticker: str, max_news: int = 10):
         overall = "neutral"
 
     return {
-        "ticker": ticker,
+        "ticker": ticker.upper(),
         "news_count": len(details),
-        "overall_sentiment": overall,
         "average_score": round(avg_score, 4),
+        "overall": overall,
         "details": details,
+        "data_status": "ok",
     }

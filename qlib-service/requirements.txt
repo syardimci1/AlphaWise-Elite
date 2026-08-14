@@ -1,0 +1,4 @@
+pyqlib
+fastapi
+uvicorn
+yfinance

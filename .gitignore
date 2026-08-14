@@ -1,5 +1,10 @@
 .env
-venv/
+*.env
 __pycache__/
 *.pyc
-.DS_Store
+csv_data_persistent/
+models_persistent/
+qlib_bin_data_persistent/
+node_modules/
+.next/
+*.log

@@ -2,6 +2,41 @@ from fastapi import FastAPI
 import talib
 import numpy as np
 import yfinance as yf
+import httpx
+import pandas as pd
+
+MARKET_DATA_URL = "http://market-data:8000"
+
+_PERIOD_TO_LIMIT = {"1mo": 22, "3mo": 65, "6mo": 130, "1y": 260, "2y": 520, "5y": 1300}
+
+
+def get_price_data(ticker: str, period: str = "6mo"):
+    """
+    Fatih Bora'nin merkezi Market Data Engine onerisi geregi eklendi (12.08.2026).
+    ARTIK dogrudan yfinance CAGIRMIYOR - merkezi market-data servisinden okuyor
+    (Qlib'in topladigi 7000+ hisselik depo). Ayni format (Open/High/Low/Close/Volume
+    sutunlu DataFrame) donduruyor, geri kalan kod degismiyor.
+    """
+    limit = _PERIOD_TO_LIMIT.get(period, 130)
+    try:
+        resp = httpx.get(f"{MARKET_DATA_URL}/price/{ticker}", params={"limit": limit}, timeout=30.0)
+        result = resp.json()
+        rows = result.get("data", [])
+        if not rows:
+            raise ValueError("merkezi depo bos, yfinance'e dusuluyor")
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date")
+        df = df.rename(columns={
+            "open": "Open", "high": "High", "low": "Low",
+            "close": "Close", "volume": "Volume",
+        })
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
+    except Exception:
+        # Merkezi depo basarisiz olursa, eski yontem (yfinance) yedek olarak kalir
+        return yf.download(ticker, period=period, progress=False)
 import psycopg2
 import redis
 import os
@@ -62,7 +97,7 @@ def calculate_fibonacci_levels(high: float, low: float):
 
 @app.get("/analyze/{ticker}")
 def analyze(ticker: str, period: str = "6mo"):
-    data = yf.download(ticker, period=period, progress=False)
+    data = get_price_data(ticker, period=period)
     if data.empty:
         return {"error": f"{ticker} icin veri bulunamadi"}
 
@@ -129,7 +164,7 @@ def backtest_technical_strategy(ticker: str, period: str = "2y"):
     TAA'nin teknik mantiginin gecmis performansidir.
     """
     try:
-        data = yf.download(ticker, period=period, progress=False)
+        data = get_price_data(ticker, period=period)
         if data.empty:
             return {"error": f"{ticker} icin veri bulunamadi"}
 

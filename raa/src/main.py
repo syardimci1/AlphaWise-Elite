@@ -102,11 +102,32 @@ def _fetch_from_alphavantage(ticker: str, period: str):
         return None
 
 
+def _fetch_from_central(ticker: str, period: str):
+    """Fatih Bora onerisi (12.08.2026): merkezi Market Data Engine, zincirin basinda denenir."""
+    try:
+        resp = requests.get(f"http://market-data:8000/price/{ticker}", params={"limit": 260}, timeout=10)
+        result = resp.json()
+        rows = result.get("data", [])
+        if not rows:
+            return None
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+        df = df.rename(columns={"close": "Close"})
+        df["Close"] = df["Close"].astype(float)
+        return df[["Close"]]
+    except Exception:
+        return None
+
+
 def fetch_ohlcv_with_fallback(ticker: str, period: str):
     """
     Veri kaynagi zinciri: yfinance -> Tiingo -> Polygon.io -> Alpha Vantage.
     Ilk basarili olan kaynaktan (Close kolonu iceren) DataFrame ve kaynak adini dondurur.
     """
+    df = _fetch_from_central(ticker, period)
+    if df is not None and not df.empty:
+        return df, "merkezi_depo"
     try:
         data = yf.download(ticker, period=period, progress=False)
         if not data.empty:
