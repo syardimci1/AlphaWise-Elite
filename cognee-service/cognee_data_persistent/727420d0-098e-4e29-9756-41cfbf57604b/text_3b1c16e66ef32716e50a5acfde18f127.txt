@@ -1,1 +1,0 @@
-Hisse senedi sembolu TSM (Taiwan Semiconductor Manufacturing Company Limited, sektor: Technology) icin EKLE karari verildi (skor: 4). Katman skorlari: {'taa': -1, 'faa': 4, 'raa': 1, 'saa': 0, 'chronos': 0}.

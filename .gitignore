@@ -8,3 +8,6 @@ qlib_bin_data_persistent/
 node_modules/
 .next/
 *.log
+.env.*
+!.env.example
+cognee-service/cognee_data_persistent/
