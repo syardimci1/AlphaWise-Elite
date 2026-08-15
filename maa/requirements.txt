@@ -24,3 +24,8 @@ uvloop==0.22.1
 watchfiles==1.2.0
 websockets==16.1.1
 pandas-datareader
+langgraph
+langchain-core
+langchain-openai
+instructor
+outlines

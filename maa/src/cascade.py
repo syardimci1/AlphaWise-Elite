@@ -6,7 +6,9 @@ Her rol icin birden fazla model adayi var (fallback zinciri).
 import os
 import json
 import httpx
-from constitution import constitution_check, ensure_disclaimer
+from constitution import constitution_check, ensure_disclaimer, check_timeframe_codes
+from tracing import izle
+from output_guard import sema_talimati, sema_talimati_vadeli
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -140,7 +142,8 @@ ILGILI METODOLOJI REFERANSI (dahili bilgi tabanindan):
 {context}
 
 {ANALYST_INSTRUCTIONS}"""
-    draft, analyst_model = await _call_with_fallback(ANALYST_MODELS, analyst_prompt)
+    with izle("analyst", ticker=ticker):
+        draft, analyst_model = await _call_with_fallback(ANALYST_MODELS, analyst_prompt)
     print(f"[TIMING] Analyst asamasi: {time.time()-_t0:.1f}s")
     if not draft:
         return {"ticker": ticker, "error": f"Analyst asamasi basarisiz: {analyst_model}"}
@@ -158,12 +161,16 @@ TASLAK: {draft}
 
 Eger SORUN YOKSA sadece "SORUN YOK" yaz. Sorun varsa madde madde listele."""
     _t1 = time.time()
-    critic_feedback, critic_model = await _call_with_fallback(CRITIC_MODELS, critic_prompt)
+    with izle("critic", ticker=ticker):
+        critic_feedback, critic_model = await _call_with_fallback(CRITIC_MODELS, critic_prompt)
     print(f"[TIMING] Critic asamasi: {time.time()-_t1:.1f}s")
     if not critic_feedback:
         critic_feedback = "Critic asamasi basarisiz oldu, kontrolsuz devam ediliyor."
 
-    all_checks_clear = "SORUN YOK" in critic_feedback.upper()
+    # FIX (15.08.2026): "Bu konuda bir sorun yok" gibi cumleler yanlis-pozitif
+    # veriyordu. Artik SADECE metnin tamami/ilk satiri "SORUN YOK" ise gecerli.
+    _cf = critic_feedback.strip().upper()
+    all_checks_clear = _cf.startswith("SORUN YOK") and len(_cf) < 40
 
     # --- ASAMA 3: MASTER (nihai sentez) ---
     master_prompt = f"""Asagida bir analiz taslagi ve buna dair elestiri/geri bildirim var.
@@ -174,9 +181,11 @@ TASLAK: {draft}
 ELESTIRI/GERI BILDIRIM: {critic_feedback}
 
 Nihai metni ayni iki bolumlu formatta (## SADE OZET / ## DETAYLI TEKNIK RAPOR) uret.
-Elestiride belirtilen sorunlari mutlaka duzelt. "al"/"sat"/"tavsiye" kelimelerini kullanma."""
+Elestiride belirtilen sorunlari mutlaka duzelt.
+" + sema_talimati() + sema_talimati_vadeli() + " "al"/"sat"/"tavsiye" kelimelerini kullanma."""
     _t2 = time.time()
-    final_text, master_model = await _call_with_fallback(MASTER_MODELS, master_prompt)
+    with izle("master", ticker=ticker):
+        final_text, master_model = await _call_with_fallback(MASTER_MODELS, master_prompt)
     print(f"[TIMING] Master asamasi: {time.time()-_t2:.1f}s")
     print(f"[TIMING] TOPLAM kaskad: {time.time()-_t0:.1f}s")
     if not final_text:
@@ -185,6 +194,9 @@ Elestiride belirtilen sorunlari mutlaka duzelt. "al"/"sat"/"tavsiye" kelimelerin
 
     # --- ANAYASA v4.4 SON KONTROL + HEDEFLI YENIDEN DENEME (13.08.2026) ---
     check = constitution_check(final_text)
+    tf = check_timeframe_codes(final_text)
+    if not tf["ikisi_de_var"]:
+        check = {"clear": False, "issues": check["issues"] + ["Kisa/uzun vade kodlari eksik veya format yanlis"]}
     max_retries = 2
     retry_count = 0
     while not check["clear"] and retry_count < max_retries:
@@ -194,15 +206,22 @@ Elestiride belirtilen sorunlari mutlaka duzelt. "al"/"sat"/"tavsiye" kelimelerin
             f"TESPIT EDILEN SORUNLAR: {', '.join(check['issues'])}\n"
             f"METIN: {final_text}\n"
             "Gorevin: SADECE bu spesifik sorunlari duzelt, metnin geri kalanini olabildigince koru. "
-            "Karar kodu SADECE su 4 kelimeden biri olmali (baska hicbir kelime kullanma): "
-            "EKLE, TUT, BEKLE, DIKKAT ET. "
+            "KARAR KODU KURALI (EN ONEMLI): Metnin TAMAMINDA yalnizca TEK bir karar "
+            "kodu gecmeli. EKLE / TUT / BEKLE / DIKKAT ET kodlarindan SADECE birini sec ve "
+            "digerlerini metnin HICBIR yerinde - ornek, aciklama, senaryo, kosul cumlesi "
+            "dahil - YAZMA. 'X kodu olsaydi' / 'EKLE sinyali guclenir' gibi ifadeler bile "
+            "YASAK. Diger kodlardan bahsetmek zorundaysan, kod adini yazmadan tarif et. "
             "al/sat/tavsiye/koru/kar realize et/firsat/ralli/roket kelimelerini KESINLIKLE kullanma."
         )
-        retry_text, retry_model = await _call_with_fallback(MASTER_MODELS, fix_prompt)
+        with izle("retry_duzeltme", ticker=ticker, deneme=retry_count):
+            retry_text, retry_model = await _call_with_fallback(MASTER_MODELS, fix_prompt)
         if retry_text:
             final_text = retry_text
             master_model = f"{master_model} (duzeltme denemesi {retry_count}: {retry_model})"
             check = constitution_check(final_text)
+            tf = check_timeframe_codes(final_text)
+            if not tf["ikisi_de_var"]:
+                check = {"clear": False, "issues": check["issues"] + ["Kisa/uzun vade kodlari eksik"]}
 
     final_text = ensure_disclaimer(final_text)
 

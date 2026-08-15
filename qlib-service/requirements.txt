@@ -2,3 +2,6 @@ pyqlib
 fastapi
 uvicorn
 yfinance
+polars
+duckdb
+pyarrow

@@ -74,6 +74,7 @@ services:
       - ./qlib-service/data_prep:/app/data_prep
     container_name: alphawise-qlib
     restart: unless-stopped
+    mem_limit: 14g
     ports:
       - "127.0.0.1:8050:8000"
 
@@ -179,6 +180,19 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8180:8000"
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: alphawise-phoenix
+    restart: unless-stopped
+    mem_limit: 1500m
+    environment:
+      - PHOENIX_WORKING_DIR=/mnt/data
+    volumes:
+      - ./phoenix-data:/mnt/data
+    ports:
+      - "127.0.0.1:6006:6006"
+      - "127.0.0.1:4317:4317"
 
 networks:
   default:

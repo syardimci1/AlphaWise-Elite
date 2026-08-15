@@ -2,3 +2,6 @@ fastapi==0.139.2
 uvicorn==0.51.0
 chromadb
 python-dotenv==1.2.2
+llama-index
+llama-index-vector-stores-chroma
+llama-index-llms-openai

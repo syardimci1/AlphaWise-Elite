@@ -65,3 +65,22 @@ def constitution_check(text: str):
         issues.append(f"Birden fazla karar kodu bulundu, tekile indirilmeli: {codes}")
 
     return {"clear": len(issues) == 0, "issues": issues}
+
+
+# ===== VADE-AYRIMLI KARAR SEMASI (15.08.2026) =====
+# AL/SAT gibi emir-bildiren kelimeler HALA YASAK - sadece mevcut 4 koda
+# (EKLE/TUT/BEKLE/DIKKAT ET) vade boyutu ekleniyor. Yasal sinir degismiyor.
+KISA_VADE_KODLARI = ALLOWED_DECISION_CODES  # ayni 4 kod
+UZUN_VADE_KODLARI = ALLOWED_DECISION_CODES  # ayni 4 kod
+
+
+def check_timeframe_codes(text: str):
+    """Kisa ve uzun vade icin AYRI AYRI karar kodu var mi, ikisi de gecerli mi kontrol eder."""
+    import re
+    kisa_match = re.search(r"KISA\s*VADE[:\s]*\**\s*(EKLE|TUT|BEKLE|DIKKAT ET)", text, re.IGNORECASE)
+    uzun_match = re.search(r"UZUN\s*VADE[:\s]*\**\s*(EKLE|TUT|BEKLE|DIKKAT ET)", text, re.IGNORECASE)
+    return {
+        "kisa_vade_kodu": kisa_match.group(1).upper() if kisa_match else None,
+        "uzun_vade_kodu": uzun_match.group(1).upper() if uzun_match else None,
+        "ikisi_de_var": bool(kisa_match and uzun_match),
+    }

@@ -1056,3 +1056,31 @@ async def get_market_status(market: str):
 async def market_status_proxy(market: str):
     """Frontend'in dogrudan cagirabilecegi vekil endpoint."""
     return await get_market_status(market)
+
+
+
+# ===== IZLEME & CIKTI KORUYUCU (15.08.2026) =====
+import sys as _s, os as _o
+_s.path.insert(0, _o.path.dirname(__file__))
+
+
+@app.get("/tracing/summary")
+def tracing_summary():
+    """Kaskad asamalarinin performans ozeti (hangi asama ne kadar suruyor)."""
+    from tracing import ozet, phoenix_ayakta
+    return {"phoenix_ayakta": phoenix_ayakta(), "ozet": ozet()}
+
+
+@app.get("/tracing/recent")
+def tracing_recent(limit: int = 50):
+    from tracing import son_izler
+    return {"izler": son_izler(limit)}
+
+
+@app.get("/guard/test/{ticker}")
+def guard_test(ticker: str, karar: str = "EKLE", gerekce: str = "Coklu katmanda pozitif konfluans."):
+    """Cikti koruyucusunu canli test eder."""
+    from output_guard import dogrula, sema_talimati
+    ok, nesne, hata = dogrula(ticker, karar, gerekce)
+    return {"gecerli": ok, "cikti": nesne.model_dump() if nesne else None,
+            "hata": hata, "sema_talimati": sema_talimati()}
