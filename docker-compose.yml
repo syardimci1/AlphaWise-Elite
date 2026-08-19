@@ -218,6 +218,14 @@ services:
     ports:
       - "127.0.0.1:8210:8000"
 
+  gamma-exposure:
+    build: ./gamma-exposure-service
+    container_name: alphawise-gamma-exposure
+    restart: unless-stopped
+    env_file: ./gamma-exposure-service/.env
+    ports:
+      - "127.0.0.1:8220:8000"
+
 networks:
   default:
     name: alphawise-net
