@@ -54,7 +54,7 @@ services:
     container_name: alphawise-frontend
     restart: unless-stopped
     ports:
-      - "0.0.0.0:3000:3000"
+      - "127.0.0.1:3000:3000"
 
   openbb:
     build: ./openbb-service
@@ -74,7 +74,7 @@ services:
       - ./qlib-service/data_prep:/app/data_prep
     container_name: alphawise-qlib
     restart: unless-stopped
-    mem_limit: 14g
+    mem_limit: 28g
     ports:
       - "127.0.0.1:8050:8000"
 
@@ -194,6 +194,14 @@ services:
       - "127.0.0.1:6006:6006"
       - "127.0.0.1:4317:4317"
 
+  data-fetcher:
+    build: ./data-fetcher
+    container_name: alphawise-data-fetcher
+    restart: "no"
+    volumes:
+      - ./qlib-service/csv_data_persistent:/app/csv_data
+    profiles: ["manual"]
+
   institution-filter:
     build: ./institution-filter-service
     container_name: alphawise-institution-filter
@@ -225,6 +233,22 @@ services:
     env_file: ./gamma-exposure-service/.env
     ports:
       - "127.0.0.1:8220:8000"
+
+  liquidity-signal:
+    build: ./liquidity-signal-service
+    container_name: alphawise-liquidity-signal
+    restart: unless-stopped
+    env_file: ./liquidity-signal-service/.env
+    ports:
+      - "127.0.0.1:8230:8000"
+
+  sec-edgar-13f:
+    build: ./sec-edgar-13f-service
+    container_name: alphawise-sec-edgar-13f
+    restart: unless-stopped
+    env_file: ./sec-edgar-13f-service/.env
+    ports:
+      - "127.0.0.1:8240:8000"
 
 networks:
   default:
