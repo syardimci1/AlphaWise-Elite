@@ -210,6 +210,14 @@ services:
     ports:
       - "127.0.0.1:8200:8000"
 
+  congress-trading:
+    build: ./congress-trading-service
+    container_name: alphawise-congress-trading
+    restart: unless-stopped
+    env_file: ./congress-trading-service/.env
+    ports:
+      - "127.0.0.1:8210:8000"
+
 networks:
   default:
     name: alphawise-net
