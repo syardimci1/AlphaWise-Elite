@@ -11,11 +11,16 @@ Veri kumesi: otcMarket / weeklySummary
   filtresiyle verildiginde izin verir; aksi halde HTTP 400 doner. Bu yuzden
   sorgularda ya sortFields kullanilmaz ya da bolum anahtarlari tam verilir.
 
-summaryTypeCode degerleri:
+summaryTypeCode degerleri (ATS ile OTC KARDES kategorilerdir, IC ICE DEGIL):
   ATS_W_SMBL      -> Sembolun TUM ATS (dark pool) haftalik toplami
   ATS_W_SMBL_FIRM -> ATS bazinda kirilim (MPID ile)
-  OTC_W_SMBL      -> Sembolun tum tezgahustu (ATS + ATS disi) toplami
+  OTC_W_SMBL      -> Sembolun ATS-DISI tezgahustu (broker iclestirme) toplami.
+                     DIKKAT: ATS hacmini ICERMEZ; ATS'nin kardesidir.
   OTC_W_SMBL_FIRM -> ATS disi tezgahustu isleme gore firma kirilimi
+
+Borsa disi (off-exchange) TOPLAM = ATS_W_SMBL + OTC_W_SMBL.
+Bu yuzden ATS'nin borsa disi paydaki orani = ats / (ats + otc) * 100 olmalidir;
+ats / otc (eski hatali formul) %100'u asabilir (orn. SPY %157.89).
 """
 import os
 import json
@@ -230,6 +235,12 @@ def ozetle(ticker: str, hafta: str, kayitlar: list) -> dict:
             "otc_toplam_trades": otc_toplam.get("totalWeeklyTradeCount") if otc_toplam else None,
             "otc_disi_firma_sayisi": len(otc_firmalar),
         },
-        "ats_orani_yuzde": round(ats_hisse / otc_hisse * 100, 2) if otc_hisse else None,
+        # Borsa disi toplam = ATS + ATS-disi OTC (kardes kategoriler).
+        "borsa_disi_toplam_shares": int(ats_hisse + otc_hisse),
+        # ATS'nin borsa disi toplam icindeki payi. 0-100 arasi olmalidir.
+        # Eski hatali formul (ats/otc) %100'u asiyordu; dogrusu ats/(ats+otc).
+        "ats_orani_yuzde": round(ats_hisse / (ats_hisse + otc_hisse) * 100, 2)
+        if (ats_hisse + otc_hisse) > 0
+        else None,
         "venues": venue_listesi,
     }
