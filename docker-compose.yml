@@ -194,6 +194,22 @@ services:
       - "127.0.0.1:6006:6006"
       - "127.0.0.1:4317:4317"
 
+  institution-filter:
+    build: ./institution-filter-service
+    container_name: alphawise-institution-filter
+    restart: unless-stopped
+    env_file: ./institution-filter-service/.env
+    ports:
+      - "127.0.0.1:8190:8000"
+
+  finra-darkpool:
+    build: ./finra-darkpool-service
+    container_name: alphawise-finra-darkpool
+    restart: unless-stopped
+    env_file: ./finra-darkpool-service/.env
+    ports:
+      - "127.0.0.1:8200:8000"
+
 networks:
   default:
     name: alphawise-net
