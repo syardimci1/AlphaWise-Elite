@@ -514,6 +514,12 @@ def score_saa(data):
     return 0
 
 
+# decide_for_ticker'in arka plan (fire-and-forget) gorevleri icin guclu referans
+# havuzu. asyncio.create_task yalnizca ZAYIF referans tutar; havuz olmazsa gorev
+# tamamlanmadan cop toplayiciya gidebilir. Gorev bitince kendini havuzdan siler.
+_ARKA_PLAN_GOREVLERI: set = set()
+
+
 async def gather_agent_data(ticker: str):
     async def _fetch_one(name):
         url = AGENTS[name]
@@ -527,11 +533,18 @@ async def gather_agent_data(ticker: str):
             except Exception as e:
                 return name, {"error": str(e)}
 
-    results = await asyncio.gather(*[_fetch_one(n) for n in ["taa", "faa", "raa", "saa"]])
-    data_dict = {name: data for name, data in results}
-    # Chronos farkli API sekli (ticker degil fiyat listesi) oldugu icin ayri cagriliyor
-    data_dict["chronos"] = await fetch_chronos_forecast(ticker)
-    return data_dict
+    # Chronos'un API sekli farklidir (ticker degil fiyat listesi ister), bu yuzden
+    # ayri bir sarmalayici gerekir — ama BEKLEMESI gerekmez. Eskiden gather'dan
+    # SONRA await ediliyordu ve olculen ~6 sn'yi (market-data 0.4 + chronos 5.6)
+    # dogrudan toplam sureye ekliyordu. Artik digerleriyle AYNI ANDA calisiyor.
+    async def _fetch_chronos():
+        return "chronos", await fetch_chronos_forecast(ticker)
+
+    results = await asyncio.gather(
+        *[_fetch_one(n) for n in ["taa", "faa", "raa", "saa"]],
+        _fetch_chronos(),
+    )
+    return {name: data for name, data in results}
 
 
 SCORE_MEANINGS = {
@@ -582,8 +595,8 @@ async def decide_for_ticker(ticker: str):
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO decision_log (ticker, decision, total_score, layer_scores, price_at_decision) VALUES (%s, %s, %s, %s, %s)",
-            (ticker, decision, total_score, json.dumps(scores), price_at_decision),
+            "INSERT INTO decision_log (ticker, decision, total_score, layer_scores, price_at_decision, source) VALUES (%s, %s, %s, %s, %s, %s)",
+            (ticker, decision, total_score, json.dumps(scores), price_at_decision, "god_mode"),
         )
         conn.commit()
         cur.close()
@@ -591,23 +604,36 @@ async def decide_for_ticker(ticker: str):
     except Exception as log_error:
         print(f"[decision_log] kayit hatasi (yanit etkilenmedi): {log_error}")
 
-    # --- COGNEE: uzun-vadeli hafizaya kaydet (grafiktabanli, gecmis kararlar icin) ---
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as cognee_client:
-            faa_data = raw.get("faa", {}) if isinstance(raw.get("faa"), dict) else {}
-            company_name = faa_data.get("company_name") or "bilinmeyen sirket"
-            sector = faa_data.get("sector") or ""
-            memory_text = (
-                f"Hisse senedi sembolu {ticker} ({company_name}, sektor: {sector}) "
-                f"icin {decision} karari verildi (skor: {total_score}). "
-                f"Katman skorlari: {scores}."
-            )
-            await cognee_client.post(
-                "http://cognee:8000/remember",
-                json={"text": memory_text, "dataset": "alphawise_decisions"},
-            )
-    except Exception as cognee_error:
-        print(f"[cognee] kayit hatasi (yanit etkilenmedi): {cognee_error}")
+    # --- COGNEE: uzun-vadeli hafizaya kaydet (ARKA PLANDA) ---
+    # Bu cagri yalnizca hafiza yazar; sonucu YANITA GIRMEZ ve hatasi zaten
+    # yutuluyordu. Buna ragmen await edildigi icin her /decide cagrisini
+    # bekletiyordu: olculen sure 3.1 - 15.0 sn arasi degisiyor (cognee soguk
+    # baslangicta 15 sn timeout'a kadar cikiyor, sonra 3-5 sn'ye iniyor).
+    # Yaniti hicbir sekilde etkilemeyen bir yan etki icin kullaniciyi
+    # bekletmenin gerekcesi yok — arka plan gorevine tasindi.
+    async def _cognee_kaydet():
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as cognee_client:
+                faa_data = raw.get("faa", {}) if isinstance(raw.get("faa"), dict) else {}
+                company_name = faa_data.get("company_name") or "bilinmeyen sirket"
+                sector = faa_data.get("sector") or ""
+                memory_text = (
+                    f"Hisse senedi sembolu {ticker} ({company_name}, sektor: {sector}) "
+                    f"icin {decision} karari verildi (skor: {total_score}). "
+                    f"Katman skorlari: {scores}."
+                )
+                await cognee_client.post(
+                    "http://cognee:8000/remember",
+                    json={"text": memory_text, "dataset": "alphawise_decisions"},
+                )
+        except Exception as cognee_error:
+            print(f"[cognee] kayit hatasi (yanit etkilenmedi): {cognee_error}", flush=True)
+
+    # Goreve GUCLU referans tutulur: asyncio yalnizca zayif referans tuttugu icin
+    # referanssiz birakilan gorev calisma ortasinda cop toplayiciya gidebilir.
+    _gorev = asyncio.create_task(_cognee_kaydet())
+    _ARKA_PLAN_GOREVLERI.add(_gorev)
+    _gorev.add_done_callback(_ARKA_PLAN_GOREVLERI.discard)
 
     return {
         "ticker": ticker,
@@ -937,7 +963,7 @@ def performance_report():
 
 
 @app.get("/narrative-verified/{ticker}")
-async def narrative_verified(ticker: str):
+async def narrative_verified(ticker: str, paket: str = "premium"):
     """
     3 asamali kaskad (Analyst->Critic->Master) + Anayasa v4.4 filtresi +
     LLMQuant (13F kurumsal sahiplik + likidite) ile zenginlestirilmis analiz.
@@ -958,7 +984,29 @@ async def narrative_verified(ticker: str):
     )
     llmquant_data = {"institutional_holders": holders, "liquidity": liquidity}
 
-    result = await run_cascade(ticker, raw, macro, llmquant_data, is_in_portfolio)
+    result = await run_cascade(ticker, raw, macro, llmquant_data, is_in_portfolio, paket)
+    # --- KARAR GUNLUGU: KISA VADE karari decision_log'a kaydet (source='llm_cascade') ---
+    try:
+        import re as _re
+        narrative_text = result.get("narrative", "")
+        m = _re.search(r"[Kk][İIıi]sa [Vv]ade:?\**\s*(EKLE|TUT|BEKLE|DIKKAT ET)", narrative_text)
+        if not m:
+            m = _re.search(r"UZUN VADE:\s*(EKLE|TUT|BEKLE|DIKKAT ET)", narrative_text)
+        if m:
+            karar_kodu = m.group(1)
+            taa_data = raw.get("taa", {}) if isinstance(raw.get("taa"), dict) else {}
+            fiyat = taa_data.get("last_close")
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO decision_log (ticker, decision, total_score, layer_scores, price_at_decision, source) VALUES (%s, %s, %s, %s, %s, %s)",
+                (ticker, karar_kodu, None, __import__("json").dumps(result.get("cascade_meta", {})), fiyat, "llm_cascade"),
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+    except Exception as log_error:
+        print(f"[decision_log/llm_cascade] kayit hatasi (yanit etkilenmedi): {log_error}", flush=True)
     return result
 
 
