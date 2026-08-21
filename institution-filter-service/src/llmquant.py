@@ -9,9 +9,12 @@ onbellegiyle carpismaz.
 import os
 import json
 import asyncio
+import logging
 
 import httpx
 import redis
+
+logger = logging.getLogger("institution-filter.llmquant")
 
 LLMQUANT_BASE_URL = os.getenv("LLMQUANT_BASE_URL", "https://api.llmquantdata.com")
 HTTP_TIMEOUT = float(os.getenv("LLMQUANT_TIMEOUT", "30"))
@@ -81,6 +84,59 @@ def anahtar_durumu() -> dict:
     }
 
 
+async def anahtar_dogrula() -> dict:
+    """Her anahtari API'ye karsi dogrular (0 kredi, /managers?limit=1)."""
+    keys = _get_api_keys()
+    sonuclar = {}
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        for isim, key in keys:
+            try:
+                resp = await client.get(
+                    f"{LLMQUANT_BASE_URL}/api/filings/13f/managers",
+                    headers={"Authorization": f"Bearer {key}"},
+                    params={"limit": 1},
+                )
+                if resp.status_code == 200:
+                    meta = resp.json().get("meta", {}) or {}
+                    sonuclar[isim] = {
+                        "gecerli": True,
+                        "http_status": 200,
+                        "kalan_kredi": meta.get("remainingCredits"),
+                    }
+                    logger.info("%s gecerli (kredi: %s)", isim, meta.get("remainingCredits"))
+                else:
+                    sonuclar[isim] = {
+                        "gecerli": False,
+                        "http_status": resp.status_code,
+                        "detay": resp.text[:200],
+                    }
+                    logger.warning(
+                        "ANAHTAR GECERSIZ: %s HTTP %d — %s",
+                        isim, resp.status_code, resp.text[:200],
+                    )
+            except Exception as e:
+                sonuclar[isim] = {
+                    "gecerli": False,
+                    "http_status": None,
+                    "detay": f"{type(e).__name__}: {e}",
+                }
+                logger.warning("ANAHTAR DOGRULAMA HATASI: %s — %s", isim, e)
+
+    for isim in ("LLMQUANT_API_KEY_1", "LLMQUANT_API_KEY_2"):
+        if isim not in sonuclar:
+            sonuclar[isim] = {"gecerli": False, "http_status": None, "detay": "tanimli degil"}
+
+    gecerli_sayisi = sum(1 for v in sonuclar.values() if v.get("gecerli"))
+    if gecerli_sayisi == 0:
+        logger.error("KRITIK: Hicbir LLMQuant anahtari gecerli degil!")
+    elif gecerli_sayisi < len(keys):
+        logger.warning(
+            "UYARI: %d/%d anahtar gecersiz — yedekleme calismayacak",
+            len(keys) - gecerli_sayisi, len(keys),
+        )
+    return sonuclar
+
+
 async def llmquant_get(path: str, params: dict) -> dict:
     """
     Verilen endpoint'e GET atar. Ilk anahtar kota/yetki hatasi verirse
@@ -108,6 +164,10 @@ async def llmquant_get(path: str, params: dict) -> dict:
                     last_error = (
                         f"{isim} basarisiz (HTTP {resp.status_code}), digeri deneniyor"
                     )
+                    logger.warning(
+                        "%s %s basarisiz (HTTP %d), fallback deneniyor",
+                        isim, path, resp.status_code,
+                    )
                     continue
                 return {
                     "error": f"HTTP {resp.status_code}",
@@ -115,8 +175,10 @@ async def llmquant_get(path: str, params: dict) -> dict:
                 }
             except Exception as e:
                 last_error = f"{isim} istisna: {type(e).__name__}: {e}"
+                logger.warning("%s %s istisna: %s", isim, path, e)
                 continue
 
+    logger.error("Tum LLMQuant anahtarlari basarisiz: %s", last_error)
     return {"error": "Tum LLMQuant anahtarlari basarisiz oldu", "last_error": last_error}
 
 

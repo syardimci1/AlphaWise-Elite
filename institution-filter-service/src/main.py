@@ -13,15 +13,38 @@ Iki yollu arama stratejisi:
                       Top-1000 kumesinde olmayan dosyalayicilar boyle bulunur.
 """
 import asyncio
+import logging
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, HTTPException
 
 from . import llmquant, resolver
 
+logger = logging.getLogger("institution-filter")
+
+_son_anahtar_dogrulama: dict = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _son_anahtar_dogrulama
+    logger.info("Baslangic: LLMQuant anahtar dogrulamasi yapiliyor...")
+    _son_anahtar_dogrulama = await llmquant.anahtar_dogrula()
+    for isim, durum in _son_anahtar_dogrulama.items():
+        if not durum.get("gecerli"):
+            logger.warning(
+                "BASLANGIC UYARISI: %s GECERSIZ — yedekleme calismayacak! Detay: %s",
+                isim, durum.get("detay", durum.get("http_status")),
+            )
+    yield
+
+
 app = FastAPI(
     title="ALPHAWISE - Institution Filter Service",
     description="13F kurumsal pozisyon sorgulama (LLMQuant tabanli)",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 BY_MANAGER_TARAMA_SINIRI = 500  # API'nin sert ust siniri
@@ -45,11 +68,20 @@ def _pozisyon_kaydi(h: dict, kaynak: str, donem: str, yonetici_adi: str, cik: st
 
 
 @app.get("/health")
-async def health():
+async def health(dogrula: bool = Query(False, description="True ise anahtarlari canli dogrular")):
+    global _son_anahtar_dogrulama
+    if dogrula:
+        _son_anahtar_dogrulama = await llmquant.anahtar_dogrula()
+
+    gecersiz = [k for k, v in _son_anahtar_dogrulama.items() if not v.get("gecerli")]
+    tum_gecersiz = all(not v.get("gecerli") for v in _son_anahtar_dogrulama.values()) if _son_anahtar_dogrulama else True
     return {
-        "status": "ok",
+        "status": "degraded" if gecersiz else "ok",
+        "uyarilar": [f"{k} gecersiz — yedekleme calismayacak" for k in gecersiz] if gecersiz and not tum_gecersiz else
+                    ["KRITIK: Hicbir anahtar gecerli degil!"] if tum_gecersiz and _son_anahtar_dogrulama else [],
         "service": "institution-filter-service",
         "api_anahtarlari": llmquant.anahtar_durumu(),
+        "anahtar_dogrulama": _son_anahtar_dogrulama,
         "redis": llmquant.redis_durumu(),
     }
 
