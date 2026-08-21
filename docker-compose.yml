@@ -53,6 +53,12 @@ services:
     build: ./frontend
     container_name: alphawise-frontend
     restart: unless-stopped
+    environment:
+      REPORTS_DIR: /reports
+    volumes:
+      # Gun sonu raporlari - SALT OKUNUR (:ro). Dashboard bu dizini yalnizca
+      # listeler ve .pdf indirir; hicbir kosulda yazamaz.
+      - /opt/alphawise/reports:/reports:ro
     ports:
       - "127.0.0.1:3000:3000"
 
