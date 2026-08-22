@@ -1,0 +1,3 @@
+defeatbeta-api
+pandas
+polars

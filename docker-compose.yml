@@ -206,6 +206,15 @@ services:
     restart: "no"
     volumes:
       - ./qlib-service/csv_data_persistent:/app/csv_data
+      # 22.08.2026 DUZELTME: bulk_fetch_defeatbeta_us.py hisse evrenini
+      # /app/data_prep/us_stock_universe.txt dosyasindan okuyor ama bu dizin
+      # HIC MOUNT EDILMEMISTI. Sonuc: weekly_retrain.sh'in 1/6. adimi her
+      # calistirmada FileNotFoundError ile dusuyor, betik bunu "UYARI ...
+      # mevcut veriyle devam" diye yutuyordu — yani YENI semboller (evrende
+      # 7110, tamamlanan 6783) hicbir zaman eklenmiyordu. Salt okunur (:ro)
+      # cunku betik bu dizine yalnizca OKUMA yapiyor; yazdigi yerler
+      # /app/csv_data altinda.
+      - ./qlib-service/data_prep:/app/data_prep:ro
     profiles: ["manual"]
 
   institution-filter:
