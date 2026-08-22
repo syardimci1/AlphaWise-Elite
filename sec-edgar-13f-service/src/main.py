@@ -13,6 +13,7 @@ DIL KURALI: Bu servis yalnizca OLCULEN veriyi raporlar. Yon tahmini,
 oneri ya da emir kipi URETMEZ — 13F verisi gecmis bir donemin
 fotografidir, gelecek iddiasi tasimaz.
 """
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Query
 
-from . import ciks, cusips
+from . import cik_evreni, ciks, cusips
 from .rate_limiter import HizSinirlayici, VARSAYILAN_HIZ
 from .sec_client import SecIstemci, kullanici_ajani
 
@@ -74,7 +75,25 @@ async def lifespan(app: FastAPI):
     _istemci = SecIstemci(_sinirlayici)
     logger.info("SEC User-Agent: %s | hiz: %s istek/sn (SEC tavani 10)",
                 kullanici_ajani(), hiz)
+
+    # Kurum evrenini arka planda hazirla. BLOKLAMAZ: indirme basarisiz
+    # olsa bile servis ayaga kalkar ve elle kuratorlenmis harita ile
+    # calismaya devam eder (fail-open). Evren yalnizca EK kapsamdir.
+    async def _evreni_hazirla():
+        try:
+            sonuc = await cik_evreni.indeksi_hazirla(
+                _sinirlayici, {"User-Agent": kullanici_ajani(), "Accept-Encoding": "gzip, deflate"}
+            )
+            logger.info("13F dosyalayici indeksi hazir: %s", sonuc)
+        except Exception as e:
+            logger.warning(
+                "13F indeksi olusturulamadi (%s) — servis elle kuratorlenmis "
+                "harita ile calismaya devam ediyor.", type(e).__name__,
+            )
+
+    _gorev = asyncio.create_task(_evreni_hazirla())
     yield
+    _gorev.cancel()
     if _redis is not None:
         await _redis.aclose()
 
@@ -215,6 +234,13 @@ async def health():
         "hiz_sinirlayici": _sinirlayici.durum() if _sinirlayici else None,
         "redis": {"connected": redis_ok, "isim_alani": ONEK,
                   "onbellek_ttl_saniye": ONBELLEK_TTL},
+        "kurum_evreni": {
+            **cik_evreni.dosya_durumu(),
+            "kuratorlenmis_kurum": len(ciks.tum_kurumlar()),
+            "not": ("Elle kuratorlenmis harita otorite; bulunamayan kurumlar "
+                    "SEC'in tam cik-lookup-data.txt evreninde aranir ve her "
+                    "aday 13F-HR dosyaladigi dogrulanarak dondurulur."),
+        },
         "bagimsizlik_notu": ("institution-filter-service (8190) ile hicbir "
                              "kod/veri bagimliligi yoktur; CIK listesi kendi "
                              "kopyasidir."),
@@ -261,12 +287,56 @@ async def position(
     """Belirli bir kurumun belirli bir hissedeki 13F pozisyonu."""
     tk = ticker.upper().strip()
 
+    # 1) ONCE elle kuratorlenmis harita. Bu harita yalnizca 25 kurum icerir
+    #    ama tasidigi bilgi ham dosyada YOKTUR — ornegin "blackrock"un guncel
+    #    CIK'e (2012383) cozulmesi, 2024'te donmus olan 1364742'ye degil.
+    #    Bu ayrim ham cik-lookup-data.txt'den cikarilamaz, o yuzden harita
+    #    otorite olarak kalir.
+    cozum_kaynagi = "elle_kuratorlenmis_harita"
     adaylar = ciks.coz(institution)
+
+    # 2) Haritada yoksa SEC'in TAM evrenine (1M+ kayit) dus. Her aday,
+    #    gercekten 13F-HR dosyalayip dosyalamadigi SEC'e sorularak
+    #    dogrulanir; /ADV gibi 13F dosyalamayan tescil kayitlari elenir.
+    evren_bilgisi = None
+    if not adaylar:
+        evren = cik_evreni.coz(institution)
+        evren_bilgisi = {
+            "toplam_eslesme": evren.get("toplam_eslesme", 0),
+            "indeks_boyutu": evren.get("indeks_boyutu", 0),
+        }
+        adaylar = [
+            {"cik": a["manager_cik"], "ad": a["manager_name"]}
+            for a in evren.get("adaylar", [])
+        ]
+        if adaylar:
+            cozum_kaynagi = "sec_cik_lookup_evreni"
+            # Belirsizligi GIZLEME: "AQR" gibi bir sorgu birden cok gercek
+            # 13F dosyalayiciyla eslesebilir. Ilk sirayi dondurmekle
+            # yetinip digerlerini yutmak, kullanicinin yanlis kuruma
+            # baktigini fark etmemesine yol acardi.
+            evren_bilgisi["secilen"] = adaylar[0]["ad"]
+            evren_bilgisi["diger_adaylar"] = [
+                {
+                    "kurum": a["manager_name"],
+                    "cik": a["manager_cik"],
+                    "onucf_dosyalama_sayisi": a["onucf_dosyalama_sayisi"],
+                }
+                for a in evren.get("adaylar", [])[1:]
+            ]
+
     if not adaylar:
         raise HTTPException(
             status_code=404,
-            detail={"neden": f"'{institution}' bilinen kurum haritasinda yok",
-                    "bilinen_kurumlar": sorted(ciks.AMIRAL_GEMILERI.keys())},
+            detail={
+                "neden": f"'{institution}' icin 13F dosyalayan bir kurum bulunamadi",
+                "arama_kapsami": (
+                    "Once elle kuratorlenmis harita, sonra SEC'in ceyreklik "
+                    "full-index (form.idx) 13F dosyalayici indeksi tarandi."
+                ),
+                "evren": evren_bilgisi,
+                "kuratorlenmis_kurumlar": sorted(ciks.AMIRAL_GEMILERI.keys()),
+            },
         )
 
     kurum = adaylar[0]
@@ -284,6 +354,10 @@ async def position(
             "donem": veri["donem"], "pozisyon_var": False,
             "neden": "ticker CUSIP'e cozulemedi",
             "cozumleme": cozum,
+            # Belirsizlik bu yolda da gorunur olmali: kullanici yanlis
+            # kuruma bakiyor olabilir ve bunu fark edemezdi.
+            "kurum_cozum_kaynagi": cozum_kaynagi,
+            "evren_arama": evren_bilgisi,
         }
 
     cusip = cozum["cusip"]
@@ -296,6 +370,8 @@ async def position(
             "neden": (f"{veri['kurum_adi']} {veri['donem']} donemli 13F'inde "
                       f"{tk} ({cusip}) bildirmedi"),
             "onbellekten": veri.get("onbellekten", False),
+            "kurum_cozum_kaynagi": cozum_kaynagi,
+            "evren_arama": evren_bilgisi,
         }
 
     kayit = _pozisyon_kaydi(cusip, p, veri, cozum)
@@ -304,6 +380,8 @@ async def position(
         "pozisyon_var": True,
         "onbellekten": veri.get("onbellekten", False),
         "kaynak": "SEC EDGAR (resmi, anahtarsiz)",
+        "kurum_cozum_kaynagi": cozum_kaynagi,
+        "evren_arama": evren_bilgisi,
         "not": ("13F verisi ceyrek sonu FOTOGRAFIDIR ve ceyrek bitiminden "
                 "45 gun sonrasina kadar aciklanabilir; guncel pozisyonu "
                 "gostermez."),

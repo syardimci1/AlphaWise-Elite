@@ -219,6 +219,27 @@ async def _fmp_al(client, yol, meclis):
     return [_fmp_normalize(x, meclis) for x in ham]
 
 
+def _fmp_kota_artir(adet: int) -> None:
+    """
+    Paylasilan FMP gunluk sayacini artirir (qlib toplu cekme betigiyle
+    ORTAK anahtar: "fmp:gunluk:<UTC tarih>").
+
+    Sessizce basarisiz olur: sayac tutulamazsa bu servisin asil isi
+    (kullaniciya veri dondurmek) etkilenmemeli.
+    """
+    try:
+        import datetime
+
+        gun = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        r = _get_redis()
+        p = r.pipeline()
+        p.incrby(f"fmp:gunluk:{gun}", adet)
+        p.expire(f"fmp:gunluk:{gun}", 48 * 3600)
+        p.execute()
+    except Exception:
+        pass
+
+
 async def fmp_cek(timeout=None):
     key = os.getenv("FMP_API_KEY")
     if not key:
@@ -229,6 +250,12 @@ async def fmp_cek(timeout=None):
                 _fmp_al(c, "/stable/senate-latest", "Senate"),
                 _fmp_al(c, "/stable/house-latest", "House"),
             )
+        # Bu iki cagriyi ORTAK gunluk sayaca yaz. Ayni FMP anahtarini
+        # qlib-service'in toplu cekme betigi de kullaniyor; o betik
+        # sayaca bakip kullanici-yuzu servise ayrilan payi korumak icin
+        # kendini durduruyor. Sayac tutulmazsa bekci korlemesine
+        # varsayim yapmak zorunda kalirdi.
+        _fmp_kota_artir(2)
         return senato + temsilciler, None
     except Exception as e:
         return None, {"kaynak": "fmp", "neden": f"{type(e).__name__}: {str(e)[:160]}"}

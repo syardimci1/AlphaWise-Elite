@@ -497,7 +497,10 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
                 />
               ))}
               <p style={{ color: '#64748b', fontSize: 10, marginTop: 8, marginBottom: 0 }}>
-                Bu liste yalnizca servisin bildigi kurum haritasini kapsar; hissenin tum sahiplerini gostermez.
+                Bu SAHIPLER listesi, servisin ayrintili olarak taradigi kuratorlenmis kurum
+                kumesiyle sinirlidir; hissenin tum sahiplerini gostermez. Kurum ADINDAN arama
+                ise ayri bir yoldur ve SEC&apos;in resmi ceyreklik full-index&apos;inden uretilen
+                8.900+ 13F dosyalayicinin tamamini kapsar (ucretsiz, anahtarsiz).
               </p>
             </>
           )}
@@ -509,11 +512,11 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         <SinyalKutusu
           baslik="Institution Filter — 13F (LLMQuant)"
           aciklama="Ayni 13F bilgisinin ticari bir saglayicidan (LLMQuant) gelen surumu."
-          rozet="kredi tukendi"
-          rozetRenk="#fb923c"
+          rozet="ikincil — artik gerekli degil"
+          rozetRenk="#64748b"
           durum={kurum.durum}
           hata={kurum.hata}
-          uyari="Bu servisin LLMQuant kredisi 0 durumunda. Yalnizca daha once sorgulanip onbellege dusmus hisseler yanit verebiliyor; yeni bir hisse sorulunca servis veri dondurmuyor. Yukaridaki SEC EDGAR kutusu ayni bilgiyi ucretsiz ve resmi kaynaktan sunar."
+          uyari="Bu servisin LLMQuant kredisi 0 durumunda ve yalnizca daha once onbellege dusmus hisseler yanit veriyor. ARTIK ENGEL DEGIL: kurum adindan arama, yukaridaki SEC EDGAR kutusunda ucretsiz ve sinirsiz olarak yapiliyor (SEC'in resmi ceyreklik full-index'inden uretilen 8.900+ 13F dosyalayici). Sekiz kurumla yapilan karsilastirmada iki kaynagin dondurdugu CIK'ler birebir ayni cikti; bir kurumu (Baupost Group) yalnizca ucretsiz kaynak buldu."
         >
           {kurum.veri && (
             <>
