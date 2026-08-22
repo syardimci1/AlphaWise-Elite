@@ -346,8 +346,8 @@ export default function Dashboard() {
   async function handlePortfolioSignal() {
     setPortfolioLoading(true)
     try {
-      const maaUrl = process.env.NEXT_PUBLIC_MAA_URL || 'http://localhost:8005'
-      const resp = await fetch(`${maaUrl}/portfolio-signal/adaptive_rotation`)
+      // Sunucu tarafi proxy: MAA'nin adresi tarayiciya sizmaz (bkz. api/maa/[...yol])
+      const resp = await fetch('/api/maa/portfolio-signal/adaptive_rotation')
       const data = await resp.json()
       setPortfolioSignal(data)
     } catch (err: any) {
@@ -364,8 +364,8 @@ export default function Dashboard() {
     setResult(null)
     setGodmode(null)
     try {
-      const maaUrl = process.env.NEXT_PUBLIC_MAA_URL || 'http://localhost:8005'
-      const resp = await fetch(`${maaUrl}/narrative-verified/${ticker.toUpperCase()}`)
+      // Sunucu tarafi proxy: MAA'nin adresi tarayiciya sizmaz (bkz. api/maa/[...yol])
+      const resp = await fetch(`/api/maa/narrative-verified/${ticker.toUpperCase()}`)
       const data = await resp.json()
       if (data.error) {
         setError(data.error)
@@ -373,7 +373,7 @@ export default function Dashboard() {
         setResult(data)
       }
       // Gecmis hafiza kayitlarini da ayrica cek (paralel, ana sonucu bekletmeden)
-      fetch(`${maaUrl}/memory/${ticker.toUpperCase()}`)
+      fetch(`/api/maa/memory/${ticker.toUpperCase()}`)
         .then(r => r.json())
         .then(m => setMemories(m.memories || []))
         .catch(() => setMemories([]))
