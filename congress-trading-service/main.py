@@ -20,6 +20,27 @@ app = FastAPI(
 )
 
 
+@app.get("/healthz")
+async def healthz():
+    """
+    LIVENESS: yalnizca "surec ayakta mi" sorusuna cevap verir.
+
+    NEDEN AYRI BIR ENDPOINT (22.08.2026):
+    Asagidaki /health, her cagrida Quiver VE FMP'ye GERCEK istek atiyor
+    (olculdu: cagri basina 0.8-1.8 sn, onbelleksiz). Docker healthcheck'i
+    30 saniyede bir /health'e baglansaydi, gunde ~2880 kez dis API cagrilir
+    ve FMP gunluk kotasi servis daha kullanilmadan tuketilirdi.
+
+    Bu yuzden Docker healthcheck bu endpoint'i kullanir: hicbir dis
+    bagimliliga dokunmaz, is mantigini calistirmaz. Kaynaklarin gercek
+    durumunu gormek icin /health kullanilmaya devam edilir.
+
+    Ayrim CONSTITUTION.md Madde 16.2'deki liveness/readiness tanimiyla
+    uyumludur.
+    """
+    return {"status": "ok", "service": "congress-trading-service"}
+
+
 @app.get("/health")
 async def health():
     """Servis + Redis + her iki kaynagin erisilebilirlik durumu."""

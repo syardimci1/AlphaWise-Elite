@@ -2,6 +2,12 @@ services:
   taa:
     build: ./taa
     container_name: alphawise-taa
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./taa/.env
     ports:
@@ -10,6 +16,12 @@ services:
   faa:
     build: ./faa
     container_name: alphawise-faa
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./faa/.env
     ports:
@@ -18,6 +30,12 @@ services:
   raa:
     build: ./raa
     container_name: alphawise-raa
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./raa/.env
     ports:
@@ -26,6 +44,12 @@ services:
   saa:
     build: ./saa
     container_name: alphawise-saa
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./saa/.env
     ports:
@@ -34,6 +58,12 @@ services:
   maa:
     build: ./maa
     container_name: alphawise-maa
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./maa/.env
     ports:
@@ -42,6 +72,12 @@ services:
   rag:
     build: ./rag
     container_name: alphawise-rag
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     env_file: ./rag/.env
     volumes:
@@ -52,6 +88,12 @@ services:
   frontend:
     build: ./frontend
     container_name: alphawise-frontend
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
     environment:
       REPORTS_DIR: /reports
@@ -65,6 +107,12 @@ services:
   openbb:
     build: ./openbb-service
     container_name: alphawise-openbb
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     env_file: ./openbb-service/.env
     restart: unless-stopped
     ports:
@@ -79,6 +127,12 @@ services:
       - ./qlib-service/qlib_bin_data_persistent:/app/qlib_bin_data
       - ./qlib-service/data_prep:/app/data_prep
     container_name: alphawise-qlib
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     mem_limit: 28g
     ports:
@@ -87,6 +141,12 @@ services:
   finbert:
     build: ./finbert-service
     container_name: alphawise-finbert
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     ports:
       - "127.0.0.1:8070:8000"
@@ -94,6 +154,12 @@ services:
   signal-ledger:
     build: ./signal-ledger
     container_name: alphawise-signal-ledger
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./signal-ledger/.env
     ports:
@@ -102,6 +168,12 @@ services:
   oanda:
     build: ./oanda-service
     container_name: alphawise-oanda
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./oanda-service/.env
     ports:
@@ -110,6 +182,12 @@ services:
   news-monitor:
     build: ./news-monitor
     container_name: alphawise-news-monitor
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     env_file: ./news-monitor/.env
     ports:
@@ -118,6 +196,12 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: alphawise-searxng
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--timeout=5", "http://localhost:8080/"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     volumes:
       - ./searxng-data:/etc/searxng:rw
@@ -129,6 +213,12 @@ services:
   research:
     build: ./research-service
     container_name: alphawise-research
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     ports:
       - "127.0.0.1:8120:8000"
@@ -136,6 +226,12 @@ services:
   cognee:
     build: ./cognee-service
     container_name: alphawise-cognee
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     env_file: ./cognee-service/.env
     volumes:
@@ -146,6 +242,12 @@ services:
   chronos:
     build: ./chronos-service
     container_name: alphawise-chronos
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     ports:
       - "127.0.0.1:8140:8000"
@@ -153,6 +255,12 @@ services:
   model-watcher:
     build: ./model-watcher
     container_name: alphawise-model-watcher
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./model-watcher/.env
     volumes:
@@ -163,6 +271,12 @@ services:
   market-data:
     build: ./market-data-service
     container_name: alphawise-market-data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     env_file: ./market-data-service/.env
     volumes:
@@ -173,6 +287,12 @@ services:
   finrl-signal:
     build: ./finrl-signal-api
     container_name: alphawise-finrl-signal
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -183,6 +303,12 @@ services:
   market-hours:
     build: ./market-hours-service
     container_name: alphawise-market-hours
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     ports:
       - "127.0.0.1:8180:8000"
@@ -220,6 +346,12 @@ services:
   institution-filter:
     build: ./institution-filter-service
     container_name: alphawise-institution-filter
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./institution-filter-service/.env
     ports:
@@ -228,6 +360,12 @@ services:
   finra-darkpool:
     build: ./finra-darkpool-service
     container_name: alphawise-finra-darkpool
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./finra-darkpool-service/.env
     ports:
@@ -236,6 +374,12 @@ services:
   congress-trading:
     build: ./congress-trading-service
     container_name: alphawise-congress-trading
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./congress-trading-service/.env
     ports:
@@ -244,6 +388,12 @@ services:
   gamma-exposure:
     build: ./gamma-exposure-service
     container_name: alphawise-gamma-exposure
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./gamma-exposure-service/.env
     ports:
@@ -252,6 +402,12 @@ services:
   liquidity-signal:
     build: ./liquidity-signal-service
     container_name: alphawise-liquidity-signal
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./liquidity-signal-service/.env
     ports:
@@ -260,6 +416,12 @@ services:
   sec-edgar-13f:
     build: ./sec-edgar-13f-service
     container_name: alphawise-sec-edgar-13f
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
     env_file: ./sec-edgar-13f-service/.env
     ports:

@@ -35,9 +35,16 @@ const TICKER_ONEKLERI = new Set(['narrative-verified', 'memory'])
 //     cikarilamaz — yani bu endpoint icin guvenilir bir senkron zaman asimi
 //     degeri YOKTUR. Asagidaki ISLEM HAVUZU + SONUC ONBELLEGI tam olarak bu
 //     yuzden var: 504 artik "harcanan kredi cope gitti" anlamina gelmiyor.
+//   memory           : Cognee'nin anlamsal sorgusu. ILK SURUMDE 30 sn idi ve
+//     bu YETERSIZDI — "hizli" VARSAYILMISTI ama olculdugunde cok oynak oldugu
+//     goruldu: ayni ticker icin arka arkaya 3.0 / 3.8 / 5.6 / 14.9 / 30.1 sn.
+//     Bir olcum tam 30.1 sn ile sinirin uzerine cikti ve cognee yeniden
+//     baslatildiktan sonra dashboard gercekten 504 aldi. Gozlenen en kotu
+//     durumun ~3 kati verildi. (Bu cagri dashboard'da fire-and-forget'tir;
+//     yavaslamasi analizi bloklamaz, yalnizca hafiza panelini geciktirir.)
 const ZAMAN_ASIMI_MS: Record<string, number> = {
   'narrative-verified': 290_000,
-  memory: 30_000,
+  memory: 90_000,
   'portfolio-signal': 180_000,
 }
 
