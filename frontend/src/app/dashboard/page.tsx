@@ -319,6 +319,330 @@ function RaporlarKarti() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// PIYASA SINYALLERI
+// ---------------------------------------------------------------------------
+// Yedi bagimsiz veri servisini tek bolumde toplar. TASARIM ILKESI: bir servis
+// calismiyorsa ya da verisi dogrulanmamissa bu GIZLENMEZ; God Mode kartindaki
+// "kalibrasyon: dogrulanmamis" deseniyle ayni durustlukte, nedeniyle birlikte
+// yazilir. Hicbir sinyal icin al/sat yonunde ifade kullanilmaz — yalnizca
+// olculen veri ve o verinin siniri aktarilir.
+
+type SinyalDurumu = 'yukleniyor' | 'veri' | 'hata'
+
+function DurumRozeti({ metin, renk }: { metin: string; renk: string }) {
+  return (
+    <span style={{
+      fontSize: 10, padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap',
+      border: `1px solid ${renk}`, color: renk, marginLeft: 8,
+    }}>
+      {metin}
+    </span>
+  )
+}
+
+function SinyalKutusu({
+  baslik, aciklama, rozet, rozetRenk, durum, hata, children, uyari,
+}: {
+  baslik: string
+  aciklama: string
+  rozet?: string
+  rozetRenk?: string
+  durum: SinyalDurumu
+  hata?: string
+  children?: React.ReactNode
+  uyari?: string
+}) {
+  return (
+    <div style={{
+      background: '#0f172a', border: '1px solid #334155', borderRadius: 10,
+      padding: 14, marginBottom: 10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ color: '#e2e8f0', fontSize: 14, fontWeight: 600 }}>{baslik}</span>
+        {rozet && <DurumRozeti metin={rozet} renk={rozetRenk || '#64748b'} />}
+      </div>
+      <p style={{ color: '#64748b', fontSize: 11, margin: '4px 0 10px' }}>{aciklama}</p>
+
+      {uyari && (
+        <div style={{
+          background: 'rgba(251,146,60,0.08)', border: '1px solid #fb923c',
+          borderRadius: 6, padding: '8px 10px', marginBottom: 10,
+          color: '#fdba74', fontSize: 11, lineHeight: 1.5,
+        }}>
+          {uyari}
+        </div>
+      )}
+
+      {durum === 'yukleniyor' && (
+        <p style={{ color: '#64748b', fontSize: 12, margin: 0 }}>Yukleniyor...</p>
+      )}
+      {durum === 'hata' && (
+        <p style={{ color: '#f87171', fontSize: 12, margin: 0 }}>{hata}</p>
+      )}
+      {durum === 'veri' && children}
+    </div>
+  )
+}
+
+function Satir({ etiket, deger }: { etiket: string; deger: React.ReactNode }) {
+  // SAVUNMA: bu degerler dis servislerden geliyor. Bir servis ileride bir
+  // alani sayi/metin yerine nesne olarak dondururse React "Objects are not
+  // valid as a React child" ile TUM sayfayi dusururdu — yani tek bir servis
+  // sema degisikligi dashboard'un tamamini beyaz ekran yapardi. Beklenmeyen
+  // turleri burada metne cevirerek bu riski kutuyla sinirliyoruz.
+  const guvenliDeger =
+    deger === null || deger === undefined
+      ? '—'
+      : typeof deger === 'object' && !Array.isArray(deger) && !('type' in (deger as any))
+        ? JSON.stringify(deger)
+        : deger
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0' }}>
+      <span style={{ color: '#94a3b8', fontSize: 12 }}>{etiket}</span>
+      <span style={{ color: '#e2e8f0', fontSize: 12, textAlign: 'right' }}>{guvenliDeger}</span>
+    </div>
+  )
+}
+
+function sayiBicimle(n: number | null | undefined, basamak = 0): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—'
+  return n.toLocaleString('tr-TR', { maximumFractionDigits: basamak })
+}
+
+/** Tek bir sinyal servisini cagirip {durum, veri, hata} olarak dondurur. */
+function useSinyal(url: string | null) {
+  const [durum, setDurum] = useState<SinyalDurumu>('yukleniyor')
+  const [veri, setVeri] = useState<any>(null)
+  const [hata, setHata] = useState('')
+
+  useEffect(() => {
+    if (!url) return
+    let iptal = false
+    setDurum('yukleniyor')
+    setVeri(null)
+    setHata('')
+
+    fetch(url)
+      .then(async r => ({ ok: r.ok, govde: await r.json() }))
+      .then(({ ok, govde }) => {
+        if (iptal) return
+        if (!ok || govde?.hata) {
+          // Sessizce bos birakmiyoruz: servisin verdigi gerekce de gosteriliyor.
+          const detay = govde?.detay
+          const detayMetni =
+            typeof detay === 'string' ? detay
+              : detay ? JSON.stringify(detay).slice(0, 160)
+                : ''
+          setHata((govde?.hata || 'Veri alinamadi') + (detayMetni ? ` — ${detayMetni}` : ''))
+          setDurum('hata')
+        } else {
+          setVeri(govde)
+          setDurum('veri')
+        }
+      })
+      .catch(e => {
+        if (iptal) return
+        setHata('Baglanti hatasi: ' + e.message)
+        setDurum('hata')
+      })
+
+    return () => { iptal = true }
+  }, [url])
+
+  return { durum, veri, hata }
+}
+
+function PiyasaSinyalleri({ ticker }: { ticker: string }) {
+  const t = ticker ? ticker.toUpperCase() : ''
+  const sec = useSinyal(t ? `/api/sec-edgar-13f/${t}` : null)
+  const kurum = useSinyal(t ? `/api/institution-filter/${t}` : null)
+  const finra = useSinyal(t ? `/api/finra-darkpool/${t}` : null)
+  const kongre = useSinyal(t ? `/api/congress-trading/${t}` : null)
+  const dpke = useSinyal(t ? `/api/gamma-exposure/${t}` : null)
+  const qlibSkor = useSinyal(t ? `/api/qlib/${t}` : null)
+  // Likidite hisseye bagli degil; ticker olmasa da her zaman cekilir.
+  const likidite = useSinyal('/api/liquidity-signal')
+
+  return (
+    <div style={{ marginTop: 32, background: '#1e293b', padding: 20, borderRadius: 12, border: '1px solid #334155' }}>
+      <h3 style={{ margin: '0 0 4px', color: '#e2e8f0' }}>Piyasa Sinyalleri</h3>
+      <p style={{ color: '#64748b', fontSize: 12, marginTop: 0, marginBottom: 16 }}>
+        Bagimsiz veri kaynaklarindan olculen gozlemler. Bunlar bir karar ya da
+        tavsiye degildir; her sinyalin kendi sinirlari asagida belirtilmistir.
+        {!t && ' Hisseye bagli sinyaller icin yukaridan bir hisse kodu arayin.'}
+      </p>
+
+      {/* ---------- SEC EDGAR 13F ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="SEC EDGAR — Kurumsal Pozisyonlar"
+          aciklama="Buyuk fonlarin ceyrek sonu itibariyla bildirdigi hisse pozisyonlari. Kaynak: SEC'in resmi acik verisi."
+          rozet="ucretsiz · resmi kaynak"
+          rozetRenk="#4ade80"
+          durum={sec.durum}
+          hata={sec.hata}
+          uyari="13F verisi ceyrek sonu fotografidir ve ceyrek bitiminden 45 gun sonrasina kadar aciklanabilir; guncel pozisyonu gostermez."
+        >
+          {sec.veri && (
+            <>
+              <Satir etiket="Pozisyon bildiren kurum" deger={`${sec.veri.bulunan_kurum_sayisi ?? 0} kurum`} />
+              <Satir etiket="Taranan kurum haritasi" deger={`${sec.veri.kapsam?.haritadaki_kurum ?? '—'} kurumdan ${sec.veri.kapsam?.bu_cagride_cekilen ?? '—'} tanesi`} />
+              {(sec.veri.sahipler || []).slice(0, 3).map((s: any) => (
+                <Satir
+                  key={s.kurum_cik}
+                  etiket={s.kurum}
+                  deger={`${sayiBicimle(s.hisse_pozisyonu?.adet)} adet · ${s.donem}`}
+                />
+              ))}
+              <p style={{ color: '#64748b', fontSize: 10, marginTop: 8, marginBottom: 0 }}>
+                Bu liste yalnizca servisin bildigi kurum haritasini kapsar; hissenin tum sahiplerini gostermez.
+              </p>
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- INSTITUTION FILTER (LLMQuant) ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Institution Filter — 13F (LLMQuant)"
+          aciklama="Ayni 13F bilgisinin ticari bir saglayicidan (LLMQuant) gelen surumu."
+          rozet="kredi tukendi"
+          rozetRenk="#fb923c"
+          durum={kurum.durum}
+          hata={kurum.hata}
+          uyari="Bu servisin LLMQuant kredisi 0 durumunda. Yalnizca daha once sorgulanip onbellege dusmus hisseler yanit verebiliyor; yeni bir hisse sorulunca servis veri dondurmuyor. Yukaridaki SEC EDGAR kutusu ayni bilgiyi ucretsiz ve resmi kaynaktan sunar."
+        >
+          {kurum.veri && (
+            <>
+              <Satir etiket="Kapsamdaki toplam sahip" deger={sayiBicimle(kurum.veri.total_holders_in_scope)} />
+              <Satir etiket="Bildirim donemi" deger={kurum.veri.ranking_period || '—'} />
+              {(kurum.veri.top_holders || []).slice(0, 3).map((h: any, i: number) => (
+                <Satir key={i} etiket={h.manager_name} deger={`sira ${h.manager_period_rank ?? '—'}`} />
+              ))}
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- FINRA DARK POOL ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="FINRA — Borsa Disi (Dark Pool) Hacim"
+          aciklama="Islemlerin ne kadarinin borsa disi havuzlarda gerceklestigi. Kaynak: FINRA ATS Transparency."
+          rozet="ucretsiz · resmi kaynak"
+          rozetRenk="#4ade80"
+          durum={finra.durum}
+          hata={finra.hata}
+          uyari="FINRA bu veriyi HAFTALIK ve gecikmeli yayimlar; anlik piyasa gorunumu degildir."
+        >
+          {finra.veri && (
+            <>
+              <Satir etiket="Veri haftasi" deger={finra.veri.week_start_date || '—'} />
+              <Satir etiket="ATS toplam hacim" deger={`${sayiBicimle(finra.veri.dark_pool?.ats_toplam_shares)} adet`} />
+              <Satir etiket="ATS islem sayisi" deger={sayiBicimle(finra.veri.dark_pool?.ats_toplam_trades)} />
+              <Satir etiket="Aktif ATS havuzu" deger={sayiBicimle(finra.veri.dark_pool?.aktif_ats_sayisi)} />
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- DPKE (gamma-exposure servisi) ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Dark Pool Katilim Endeksi (DPKE)"
+          aciklama="Borsa disi hacmin icinde dark pool havuzlarinin payi. FINRA verisinden hesaplanir."
+          rozet="resmi DIX degil"
+          rozetRenk="#fb923c"
+          durum={dpke.durum}
+          hata={dpke.hata}
+          uyari="Bu gosterge SqueezeMetrics'in resmi DIX'i DEGILDIR, ona benzeyen ama farkli bir olcumdur. Ayrica ayni servisteki opsiyon GEX verisi ucretsiz FlashAlpha planinda kapali oldugu icin otomatik cagrilmaz."
+        >
+          {dpke.veri && (
+            <>
+              <Satir etiket="Cari hafta DPKE" deger={`%${dpke.veri.cari_hafta?.dpke_yuzde ?? '—'}`} />
+              <Satir etiket="12 haftalik ortalama" deger={`%${dpke.veri.baglam?.ortalama_dpke_yuzde ?? '—'}`} />
+              <Satir etiket="Z-skoru" deger={dpke.veri.baglam?.z_skoru ?? '—'} />
+              <Satir etiket="Yuzdelik dilim" deger={`%${dpke.veri.baglam?.yuzdelik_dilim ?? '—'}`} />
+              {dpke.veri.baglam?.yorum && (
+                <p style={{ color: '#94a3b8', fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+                  {dpke.veri.baglam.yorum}
+                </p>
+              )}
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- CONGRESS TRADING ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Kongre Uyesi Islemleri"
+          aciklama="ABD Kongre uyelerinin STOCK Act kapsaminda bildirdigi hisse islemleri."
+          rozet={kongre.veri?.fallback_used ? 'yedek kaynak (FMP)' : 'birincil kaynak'}
+          rozetRenk={kongre.veri?.fallback_used ? '#fb923c' : '#4ade80'}
+          durum={kongre.durum}
+          hata={kongre.hata}
+          uyari="Birincil kaynak Quiver abonelik kisiti nedeniyle erisilemiyor; veri FMP yedeginden geliyor. Bildirimler islem tarihinden haftalar sonra yayimlanabilir."
+        >
+          {kongre.veri && (
+            <>
+              <Satir etiket="Bildirilen islem" deger={sayiBicimle(kongre.veri.ozet?.islem_sayisi)} />
+              <Satir etiket="Alis / Satis bildirimi" deger={`${sayiBicimle(kongre.veri.ozet?.alis_sayisi)} / ${sayiBicimle(kongre.veri.ozet?.satis_sayisi)}`} />
+              <Satir etiket="Farkli uye sayisi" deger={sayiBicimle(kongre.veri.ozet?.farkli_uye)} />
+              <Satir etiket="Kaynak" deger={kongre.veri.source_label || kongre.veri.source || '—'} />
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- QLIB ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Qlib Model Skoru"
+          aciklama="LightGBM/Alpha158 modelinin hisse icin urettigi ham skor."
+          rozet="dusuk tahmin gucu"
+          rozetRenk="#fb923c"
+          durum={qlibSkor.durum}
+          hata={qlibSkor.hata}
+          uyari="Modelin son egitimindeki gunluk kesitsel IC degeri 0.0123 olculdu; egitim betiginin kendi olcutune gore makul kabul edilen aralik 0.02-0.05'tir. Yani skorun tahmin gucu su an dusuktur ve tek basina bir sonuc cikarilmamalidir."
+        >
+          {qlibSkor.veri && (
+            <>
+              <Satir etiket="Skor" deger={qlibSkor.veri.score ?? '—'} />
+              <Satir etiket="Skorun ait oldugu gun" deger={(qlibSkor.veri.as_of_date || '—').toString().slice(0, 10)} />
+              <Satir etiket="Model" deger={qlibSkor.veri.model || '—'} />
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- LIQUIDITY SIGNAL (hisseden bagimsiz) ---------- */}
+      <SinyalKutusu
+        baslik="Fed Likidite Rejimi"
+        aciklama="Fed bilancosu, Hazine hesabi ve ters repo verisinden hesaplanan net likidite. Hisseye bagli degildir."
+        rozet="DOGRULANMAMIS — izleme amacli"
+        rozetRenk="#f87171"
+        durum={likidite.durum}
+        hata={likidite.hata}
+        uyari="Bu sinyal test edildi ve su an guvenilir bulunmadi: denenen 9 spesifikasyondan hicbiri gecme esigini asamadi (en iyi olculen beceri +1.63 puan, esik +5.0). Bu nedenle servis yon iddiasi tasiyan kod uretmez ve buradaki degerler yalnizca izleme/baglam amaciyla gosterilir."
+      >
+        {likidite.veri && (
+          <>
+            <Satir etiket="Rejim" deger={likidite.veri.rejim || '—'} />
+            <Satir etiket="Net likidite" deger={`${sayiBicimle(likidite.veri.net_likidite_milyon_usd)} mn USD`} />
+            <Satir etiket="60 gunluk Z-skor" deger={(likidite.veri.z_skor_60g ?? 0).toFixed(2)} />
+            <Satir etiket="Yillik degisim" deger={`%${(likidite.veri.yoy_yuzde ?? 0).toFixed(2)}`} />
+            <Satir etiket="Son veri gunu" deger={likidite.veri.son_gun || '—'} />
+          </>
+        )}
+      </SinyalKutusu>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [ticker, setTicker] = useState('')
   const [result, setResult] = useState<any>(null)
@@ -330,6 +654,9 @@ export default function Dashboard() {
   const [memories, setMemories] = useState<any[]>([])
   const [godmode, setGodmode] = useState<any>(null)
   const [godmodeLoading, setGodmodeLoading] = useState(false)
+  // Arama ANINDA sabitlenen hisse kodu. Piyasa Sinyalleri bunu kullanir;
+  // dogrudan `ticker` kullanilsaydi her tus vurusunda 6 servise istek giderdi.
+  const [aranmisTicker, setAranmisTicker] = useState('')
   const router = useRouter()
 
   useEffect(() => {
@@ -385,6 +712,7 @@ export default function Dashboard() {
     // God Mode olasiliksal degerlendirmesi (bolgeler + yon kodu) - MAA sonucundan
     // bagimsiz, ayri bir bolumde gosterilir; MAA'nin EKLE/TUT/BEKLE/DIKKAT ET
     // karar koduna dokunmaz.
+    setAranmisTicker(ticker.toUpperCase())
     setGodmodeLoading(true)
     fetch(`/api/godmode/${ticker.toUpperCase()}`)
       .then(r => r.json())
@@ -525,6 +853,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      <PiyasaSinyalleri ticker={aranmisTicker} />
       <BistArastirmaMasasi />
       <RaporlarKarti />
     </div>
