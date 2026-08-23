@@ -150,12 +150,33 @@ def analyze(ticker: str, period: str = "6mo"):
 
 import vectorbt as vbt
 
+from . import walkforward as wf
+
 
 @app.get("/backtest/{ticker}")
-def backtest_technical_strategy(ticker: str, period: str = "2y"):
+def backtest_technical_strategy(
+    ticker: str,
+    period: str = "5y",
+    egitim_gun: int = wf.EGITIM_GUN,
+    test_gun: int = wf.TEST_GUN,
+    maliyet_yuzde: float = 0.20,
+):
     """
-    TAA'nin kullandigi RSI+SMA kesisim mantigina dayali basit bir teknik
-    stratejiyi, GERCEK gecmis fiyat verisiyle geriye donuk test eder.
+    TAA'nin RSI+SMA kesisim mantigini GERCEK gecmis fiyat verisiyle
+    geriye donuk test eder.
+
+    23.08.2026 DEGISIKLIK — Anayasa §8.6 uyumu:
+      §8.6: "Walk-Forward Optimization (VectorBT): Standard backtest yasak.
+             Sadece expanding/rolling window. TCA: %0.20 slippage dahil."
+    Onceki surum TUM gecmise tek seferde sabit parametre uyguluyordu
+    (ornek-ICI) ve fees=0.001 / slippage=0 (yani %0.10) kullaniyordu —
+    iki maddede de ihlal. Artik birincil olcum kayan pencereyle
+    ORNEK-DISI yapilir ve islem basina toplam maliyet varsayilan %0.20'dir.
+
+    API SOZLESMESI KORUNDU: eski alanlarin hicbiri kaldirilmadi veya tip
+    degistirmedi; yalnizca DEGERLERI artik §8.6 uyumlu birincil olcumu
+    yansitiyor. Ornek-ici eski olcum `referans_olcum_ornek_ici` altinda,
+    "abartir" uyarisiyla birlikte ayrica donuyor.
 
     ONEMLI KAPSAM NOTU: Bu, sadece TEKNIK gostergelere (RSI, SMA) dayali bir
     backtest'tir. FAA/RAA/SAA'nin (temel, risk, duygu) katkisini icermez,
@@ -171,34 +192,72 @@ def backtest_technical_strategy(ticker: str, period: str = "2y"):
         close = data["Close"]
         if isinstance(close, type(data)):
             close = close.iloc[:, 0]
-        close = close.dropna()
+        close = close.dropna().sort_index()
 
-        rsi = vbt.RSI.run(close, window=14).rsi
-        sma20 = vbt.MA.run(close, window=20).ma
-        sma50 = vbt.MA.run(close, window=50).ma
+        fees, slip = wf.maliyetten_fees_slip(maliyet_yuzde)
 
-        entries = (rsi < 30) & (sma20 > sma50)
-        exits = (rsi > 70) | (sma20 < sma50)
+        gerekli = max(egitim_gun, wf.ISINMA) + 10
+        if len(close) < gerekli:
+            return {
+                "error": (f"{ticker}: walk-forward icin yetersiz veri "
+                          f"({len(close)} bar, gereken >= {gerekli}). "
+                          f"Daha uzun bir 'period' deneyin (or. 5y)."),
+                "anayasa_8_6_uyumlu": False,
+                "bar_sayisi": len(close),
+            }
 
-        portfolio = vbt.Portfolio.from_signals(
-            close, entries, exits,
-            init_cash=10000, fees=0.001, freq="1D"
-        )
+        birincil, secimler = wf.walk_forward(
+            close, fees, slip, egitim_gun=egitim_gun, test_gun=test_gun)
+        if birincil is None:
+            return {
+                "error": f"{ticker}: ornek-disi pencere olusturulamadi",
+                "anayasa_8_6_uyumlu": False,
+            }
 
-        stats = portfolio.stats()
+        referans = wf.ornek_ici(close, fees, slip)
+        al_tut = wf.al_tut_referansi(close, secimler)
 
         return {
+            # --- eski sozlesme (alanlar ayni, degerler artik §8.6 uyumlu) ---
             "ticker": ticker,
             "period": period,
-            "strategy": "RSI(14) < 30 VE SMA20 > SMA50 iken AL; RSI > 70 VEYA SMA20 < SMA50 iken SAT",
+            "strategy": "RSI+SMA kesisimi; parametreler her egitim penceresinde yeniden secilir",
             "scope_note": "Sadece teknik (TAA) mantigi test edildi, FAA/RAA/SAA dahil degil",
             "initial_cash": 10000,
-            "final_value": round(float(stats.get("End Value", 0)), 2),
-            "total_return_pct": round(float(stats.get("Total Return [%]", 0)), 2),
-            "total_trades": int(stats.get("Total Trades", 0)),
-            "win_rate_pct": round(float(stats.get("Win Rate [%]", 0)), 2) if stats.get("Win Rate [%]") is not None else None,
-            "max_drawdown_pct": round(float(stats.get("Max Drawdown [%]", 0)), 2),
-            "sharpe_ratio": round(float(stats.get("Sharpe Ratio", 0)), 3) if stats.get("Sharpe Ratio") is not None else None,
+            "final_value": birincil["son_deger"],
+            "total_return_pct": birincil["toplam_getiri_yuzde"],
+            "total_trades": birincil["islem_sayisi"],
+            "win_rate_pct": birincil["kazanma_orani_yuzde"],
+            "max_drawdown_pct": birincil["maks_dusus_yuzde"],
+            "sharpe_ratio": birincil["sharpe"],
+            # --- §8.6 uyum bilgisi ---
+            "anayasa_8_6_uyumlu": True,
+            "yontem": "walk_forward_ornek_disi",
+            "maliyet_yuzde": round(float(maliyet_yuzde), 4),
+            "egitim_gun": egitim_gun,
+            "test_gun": test_gun,
+            "pencere_sayisi": len(secimler),
+            "bar_sayisi": len(close),
+            "birincil_olcum": birincil,
+            "referans_olcum_ornek_ici": referans,
+            "al_tut_referansi": al_tut,
+            "secilen_parametreler_ornek": secimler[:3],
+            # --- 3b.3: kullanici bilgilendirmesi ---
+            "olcum_notu": (
+                "Bu sonuc artik gercekci test sonucudur, onceki iyimser "
+                "rakamlar degil. Onceki surum parametreleri tum gecmise tek "
+                "seferde uyguluyor (ornek-ici) ve islem maliyetini eksik "
+                "sayiyordu; ikisi de performansi sistematik olarak ABARTIR. "
+                "Birincil olcum artik kayan pencereyle ornek-disi yapilir ve "
+                f"islem basina %{maliyet_yuzde:.2f} maliyet dahildir, bu "
+                "yuzden Sharpe ve getiri genellikle DAHA DUSUK cikar. "
+                "'referans_olcum_ornek_ici' yalnizca karsilastirma icindir, "
+                "karar dayanagi yapilamaz."
+            ),
+            "uyari": (
+                "Gecmis performans gelecek icin garanti degildir. Bu ciktı "
+                "yatirim tavsiyesi degildir."
+            ),
         }
     except Exception as e:
         return {"error": str(e)}

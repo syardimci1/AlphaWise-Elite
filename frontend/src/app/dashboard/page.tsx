@@ -462,6 +462,8 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
   const kongre = useSinyal(t ? `/api/congress-trading/${t}` : null)
   const dpke = useSinyal(t ? `/api/gamma-exposure/${t}` : null)
   const qlibSkor = useSinyal(t ? `/api/qlib/${t}` : null)
+  // 23.08.2026 — 7. sinyal: SEC Form 4 (sirket ici yonetici islemleri).
+  const iceriden = useSinyal(t ? `/api/insider-trading/${t}` : null)
   // Likidite hisseye bagli degil; ticker olmasa da her zaman cekilir.
   const likidite = useSinyal('/api/liquidity-signal')
 
@@ -501,6 +503,44 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
                 kumesiyle sinirlidir; hissenin tum sahiplerini gostermez. Kurum ADINDAN arama
                 ise ayri bir yoldur ve SEC&apos;in resmi ceyreklik full-index&apos;inden uretilen
                 8.900+ 13F dosyalayicinin tamamini kapsar (ucretsiz, anahtarsiz).
+              </p>
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- SEC FORM 4 — ICERIDEN ISLEM (23.08.2026 eklendi) ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="SEC Form 4 — Sirket Ici Yonetici Islemleri"
+          aciklama="Sirketin kendi yoneticilerinin (CEO/CFO/yonetim kurulu) kendi hisselerinde yaptigi ve SEC'e bildirdigi islemler. Sistemdeki en TAZE sahiplik akisidir: olculen yasal bildirim gecikmesi medyan 2 is gunu (13F 45 gun, Kongre 30-45 gun, dark pool 21-27 gun)."
+          rozet="gozlem amacli — yon sinyali degil"
+          rozetRenk="#fbbf24"
+          durum={iceriden.durum}
+          hata={iceriden.hata}
+          uyari="Bu kutu bir yon iddiasi TASIMAZ ve tasiyamaz. Olculdu: 25 buyuk hissede 3,57 yil boyunca yalnizca 32 acik piyasa ALIMI bildirildi ve bunun 29'u tek bir hissede toplandi; 21 hissede hic alim yok. Literaturde tahmin gucu atfedilen alt kume tam da bu alimlardir, dolayisiyla orneklem yon kalibrasyonu icin matematiksel olarak yetersizdir (gereken 1.000+, eldeki ~12 gozlem). Bu nedenle servis kod seviyesinde yon kodu uretemez (lambda = 0). Ayrica kayitlarin yalnizca ucte biri kadari acik piyasa islemidir; kalani odul, opsiyon kullanimi, vergi stopaji ve hediyedir — bunlar ayristirilmistir."
+        >
+          {iceriden.veri && (
+            <>
+              <Satir etiket="Toplam Form 4 kaydi" deger={sayiBicimle(iceriden.veri.toplam_kayit)} />
+              <Satir etiket="En yeni bildirim" deger={iceriden.veri.en_yeni_dosyalama || '—'} />
+              <Satir etiket="Yasal gecikme (medyan)" deger={`${iceriden.veri.yasal_gecikme_is_gunu_medyan ?? '—'} is gunu`} />
+              <Satir
+                etiket="Son 90 gun — acik piyasa alim"
+                deger={`${iceriden.veri.pencereler?.son_90_gun?.acik_piyasa_alim_islem_sayisi ?? 0} bildirim · ${iceriden.veri.pencereler?.son_90_gun?.alim_bildiren_kisi_sayisi ?? 0} kisi`}
+              />
+              <Satir
+                etiket="Son 90 gun — acik piyasa satis"
+                deger={`${iceriden.veri.pencereler?.son_90_gun?.acik_piyasa_satis_islem_sayisi ?? 0} bildirim · ${iceriden.veri.pencereler?.son_90_gun?.satis_bildiren_kisi_sayisi ?? 0} kisi`}
+              />
+              <Satir
+                etiket="Son 180 gun — acik piyasa alim"
+                deger={`${iceriden.veri.pencereler?.son_180_gun?.acik_piyasa_alim_islem_sayisi ?? 0} bildirim`}
+              />
+              <p style={{ color: '#64748b', fontSize: 10, marginTop: 8, marginBottom: 0 }}>
+                Kaynak: SEC EDGAR Form 4 — ucretsiz ve anahtarsiz. Servis bu hisse icin
+                sonucu 6 saat onbellekte tutar (SEC&apos;in toplu veri cekme uyarisi geregi).
+                Kalibrasyon gecerli DEGILDIR; bu kutu MAA&apos;nin karar zincirine bagli degildir.
               </p>
             </>
           )}
