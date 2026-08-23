@@ -411,6 +411,20 @@ function sayiBicimle(n: number | null | undefined, basamak = 0): string {
   return n.toLocaleString('tr-TR', { maximumFractionDigits: basamak })
 }
 
+/**
+ * Buyuk dolar buyukluklerini okunabilir kisaltir (opsiyon maruziyeti
+ * degerleri 10^10 mertebesine cikiyor; ham basamaklar okunmuyor).
+ * Isaret KORUNUR: negatif maruziyet ters yonu ifade eder, gizlenemez.
+ */
+function dolarBicimle(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—'
+  const mutlak = Math.abs(n)
+  const isaret = n < 0 ? '-' : ''
+  if (mutlak >= 1e9) return `${isaret}$${(mutlak / 1e9).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} milyar`
+  if (mutlak >= 1e6) return `${isaret}$${(mutlak / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} milyon`
+  return `${isaret}$${mutlak.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`
+}
+
 /** Tek bir sinyal servisini cagirip {durum, veri, hata} olarak dondurur. */
 function useSinyal(url: string | null) {
   const [durum, setDurum] = useState<SinyalDurumu>('yukleniyor')
@@ -464,6 +478,11 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
   const qlibSkor = useSinyal(t ? `/api/qlib/${t}` : null)
   // 23.08.2026 — 7. sinyal: SEC Form 4 (sirket ici yonetici islemleri).
   const iceriden = useSinyal(t ? `/api/insider-trading/${t}` : null)
+  // 23.08.2026 — 8. sinyal: opsiyon maruziyeti (DEX/GEX/Vanna).
+  // Zincir openbb-service uzerinden yfinance'ten gelir; FlashAlpha kotasina
+  // DOKUNMAZ (ayni servisteki /gex ucu ucretsiz planda kapali ve basarisiz
+  // cagri bile kotadan dusuyordu — bu kart o tuzaga girmez).
+  const opsiyon = useSinyal(t ? `/api/dex-vanna/${t}` : null)
   // Likidite hisseye bagli degil; ticker olmasa da her zaman cekilir.
   const likidite = useSinyal('/api/liquidity-signal')
 
@@ -614,6 +633,47 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
                   {dpke.veri.baglam.yorum}
                 </p>
               )}
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- OPSIYON MARUZIYETI (DEX / GEX / VANNA) ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Opsiyon Maruziyeti — DEX / GEX / Vanna"
+          aciklama="Opsiyon zincirinden Black-Scholes ile hesaplanan delta, gamma ve vanna maruziyeti."
+          rozet="hesaplanmis turev — kalibre edilmemis"
+          rozetRenk="#fbbf24"
+          durum={opsiyon.durum}
+          hata={opsiyon.hata}
+          uyari="Bu degerler HESAPLANMIS TUREVLERDIR, olculmus bayi konumlanmasi degildir. Bayinin call'da uzun / put'ta kisa oldugu varsayimi sektorde yaygindir ama kamuya acik bir veriyle DOGRULANAMAZ; bu yuzden varsayimsiz 'ham' deger de ayrica gosterilir. Yunanlar zincirde bulunmadigi icin Black-Scholes ile hesaplanir; risksiz faiz %4 ve temettu %0 VARSAYIMDIR. Bu sinyalin ongoru gucu bu sistemde KALIBRE EDILMEMISTIR ve karar koduna baglanmaz."
+        >
+          {opsiyon.veri && (
+            <>
+              <Satir etiket="Dayanak fiyati" deger={opsiyon.veri.spot != null ? `$${sayiBicimle(opsiyon.veri.spot, 2)}` : '—'} />
+              <Satir
+                etiket="Hesaba giren kontrat"
+                deger={`${sayiBicimle(opsiyon.veri.kullanilan_kontrat)} (elenen %${opsiyon.veri.atlanma_orani_yuzde ?? '—'})`}
+              />
+              <Satir etiket="Toplam acik pozisyon" deger={sayiBicimle(opsiyon.veri.toplam_acik_pozisyon)} />
+              <Satir etiket="Delta maruziyeti (bayi varsayimli)" deger={dolarBicimle(opsiyon.veri.bayi_varsayimli?.dex)} />
+              <Satir etiket="Gamma maruziyeti (%1 spot basina)" deger={dolarBicimle(opsiyon.veri.bayi_varsayimli?.gex)} />
+              <Satir etiket="Vanna maruziyeti (1 puan IV basina)" deger={dolarBicimle(opsiyon.veri.bayi_varsayimli?.vex)} />
+              <Satir
+                etiket="En yogun GEX strike"
+                deger={
+                  opsiyon.veri.en_buyuk_gex_strike_bayi_isaretli?.[0]
+                    ? `$${sayiBicimle(opsiyon.veri.en_buyuk_gex_strike_bayi_isaretli[0].strike, 2)}`
+                    : '—'
+                }
+              />
+              <Satir etiket="Ham delta maruziyeti (varsayimsiz)" deger={dolarBicimle(opsiyon.veri.ham?.dex)} />
+              <p style={{ color: '#64748b', fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+                Kaynak: {opsiyon.veri.kaynak || '—'}
+                {opsiyon.veri.onbellekten ? ' (onbellekten)' : ''}
+                {' · '}FlashAlpha kotasi tuketimi: {opsiyon.veri.flashalpha_kotasi_tuketildi ? 'VAR' : 'YOK'}
+              </p>
             </>
           )}
         </SinyalKutusu>

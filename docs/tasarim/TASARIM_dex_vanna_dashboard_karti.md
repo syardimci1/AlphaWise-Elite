@@ -1,8 +1,12 @@
 # TASARIM — DEX/Vanna kartının dashboard'a eklenmesi (8. Piyasa Sinyali)
 
-> **DURUM: TASARIM. UYGULANMADI.** Servis tarafı (`/dex-vanna/{ticker}`) yazıldı
-> ve test edildi; dashboard bağlantısı bu görevde bilerek yapılmadı.
-> Tarih: 23 Ağustos 2026.
+> **DURUM: UYGULANDI (23 Ağustos 2026).** Servis tarafı (`/dex-vanna/{ticker}`)
+> daha önce yazılmış ve test edilmişti; dashboard bağlantısı, proxy route'u ve
+> kartı bu tarihte eklendi.
+>
+> **Uygulamada tasarımdan sapan tek nokta:** alan adı `en_buyuk_gex_strike`
+> değil, servisin gerçekte döndürdüğü `en_buyuk_gex_strike_bayi_isaretli`.
+> Tasarım metnindeki kısa ad canlı yanıtla karşılaştırılınca düzeltildi.
 
 ## 1. Görevin öncülü neden düzeltildi
 
