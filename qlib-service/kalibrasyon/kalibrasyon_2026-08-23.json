@@ -14,12 +14,24 @@
       },
       "taban_orani": 0.4542,
       "gunluk_kesitsel_ic": 0.04223,
-      "ic_95_ga": [0.02030, 0.06415],
-      "ic_fisher_z_95_ga": [0.02033, 0.06650],
-      "ic_bootstrap_95_ga": [0.02245, 0.06764],
+      "ic_95_ga": [
+        0.0203,
+        0.06415
+      ],
+      "ic_fisher_z_95_ga": [
+        0.02033,
+        0.0665
+      ],
+      "ic_bootstrap_95_ga": [
+        0.02245,
+        0.06764
+      ],
       "ic_bootstrap_p_pozitif": 1.0,
       "rank_ic": 0.01501,
-      "rank_ic_fisher_95_ga": [-0.00063, 0.03077],
+      "rank_ic_fisher_95_ga": [
+        -0.00063,
+        0.03077
+      ],
       "rank_ic_sifiri_iceriyor": true,
       "brier_iyilesme_yuzde": {
         "ham_yuzdelik_sira_KALIBRE_EDILMEMIS": -30.016,
@@ -35,11 +47,106 @@
     "finrlx_score": {
       "kalibre_edildi": false,
       "sebep": "YETERSIZ VERI — signal_ledger'da finrlx_score dolu 2 gozlem var, 1 gune ait (2026-08-23). God Mode esigi icin 1.000+ gozlem ve coklu gun gerekiyor.",
-      "veri": {"gozlem": 2, "farkli_gun": 1},
-      "gerekli_adim": "Gecmise donuk doldurma: finrl-signal /signal/adaptive_rotation cagrisi tarih basina ~64 sn olculdu; 100 islem gunu icin ~1,8 saat CPU. Ayrica sinyal gun basina yalnizca ~6 hisseye pay veriyor, yani kesitsel orneklem cok dar.",
+      "veri": {
+        "gozlem": 2,
+        "farkli_gun": 1
+      },
+      "gerekli_adim": "GECMISE DOLDURMA BUTCEYE SIGMIYOR (23.08.2026'da olculdu). Tek bir `deploy.sh --mode single` kosumu data/fmp_daily altindaki 25 CSV'nin TAMAMINI canli FMP'den tazeliyor (src/data/data_fetcher.py:163 financialmodelingprep.com/stable/; FMP_API_KEY dolu oldugu icin offline_mode=False). Kanit: tek test kosumundan sonra 25 dosyanin 25'inin de mtime'i ayni dakikaya (16:52) atladi. 30 islem gunu = 30 x 25 = 750 FMP istegi; paylasilan gunluk tavan ise 250 (qlib-service/data_prep/fmp_kota.py:46). Yani 3 KAT asim. Ustelik FinRL bu kotayi HIC kontrol etmiyor — bekci yalnizca qlib-service tarafinda. Asim, haftalik retrain'in veri cekme adimini de bozar. Kullaniciya uc secenek sunuldu, 'hic yapma' secildi.",
       "lambda": 0.0,
-      "karar": "LAMBDA 0'DA KALIR (olculmedi, dolayisiyla dogrulanmadi)."
+      "karar": "LAMBDA 0'DA KALIR (olculmedi, dolayisiyla dogrulanmadi).",
+      "butce_engeli": {
+        "kosum_basina_fmp_istegi": 25,
+        "30_gun_icin_toplam": 750,
+        "paylasilan_gunluk_tavan": 250,
+        "asim_katsayisi": 3.0,
+        "finrl_kota_bekcisi_var_mi": false,
+        "karar": "BASLATILMADI — BUTCE ONAY KURALI geregi kullaniciya soruldu, 'hic yapma' yaniti alindi."
+      }
     }
   },
-  "karar_formulune_etki": "YOK. Iki sinyal de yalnizca signal_ledger'a KAYDEDILIR; total_score ve decision MAA'dan geldigi gibi yazilir. CLAUDE.md karar kodlari kurali korunmustur."
+  "karar_formulune_etki": "YOK. Iki sinyal de yalnizca signal_ledger'a KAYDEDILIR; total_score ve decision MAA'dan geldigi gibi yazilir. CLAUDE.md karar kodlari kurali korunmustur.",
+  "normalizasyon_denemesi": {
+    "soru": "Alpha158'e infer_processors (ProcessInf + ZScoreNorm + Fillna) eklemek IC'yi iyilestirir mi?",
+    "karar": "UYGULANMADI",
+    "gerekce": "Izole deney iyilesme GOSTERMEDI; kullanicinin onayladigi kural geregi (iyilestirmiyorsa uygulanmaz) uretim degistirilmedi.",
+    "deney_tasarimi": {
+      "evren": "batch 1 — 2000 hisse, 2,52 milyon satir",
+      "tarihler": "egitim <=2025-12-31, dogrulama <=2026-04-30, test sonrasi",
+      "esitlik": "iki kolda AYNI winsorize, AYNI tarihler, AYNI satirlar (145.089 ortak tahmin)",
+      "tohum_sayisi": 3
+    },
+    "ilk_denemede_bulunan_hata": {
+      "ne": "ZScoreNorm/Fillna varsayilan fields_group=None ile TUM sutunlara, yani ETIKETE de uygulaniyordu.",
+      "sonuc": "Iki kol farkli hedef ogreniyordu; IC karsilastirmasi elma-armut idi ve normalizasyonu YANLISLIKLA IYI gosteriyordu (+0,00174).",
+      "nasil_yakalandi": "Eslestirme testindeki etiket esitligi kontrolu ('etiketler ayni degil') basarisiz oldu.",
+      "duzeltme": "fields_group='feature' verildi; etiket uretimdekiyle birebir ayni kaldi."
+    },
+    "duzeltilmis_sonuc": {
+      "tek_kosum": {
+        "ic": [
+          0.02202,
+          0.00583
+        ],
+        "rank_ic": [
+          -0.00674,
+          4e-05
+        ],
+        "ir": [
+          0.2344,
+          0.0515
+        ],
+        "tekil_tahmin": [
+          8317,
+          1963
+        ],
+        "agac": [
+          16,
+          6
+        ]
+      },
+      "eslestirilmis_3_tohum": [
+        {
+          "tohum": 42,
+          "ic_farki": -0.01015,
+          "ga": [
+            -0.03257,
+            0.01134
+          ],
+          "p": 0.3762,
+          "ir": [
+            0.1812,
+            0.0648
+          ]
+        },
+        {
+          "tohum": 2026,
+          "ic_farki": -0.00679,
+          "ga": [
+            -0.02704,
+            0.01285
+          ],
+          "p": 0.5106,
+          "ir": [
+            0.2506,
+            0.116
+          ]
+        },
+        {
+          "tohum": 999,
+          "ic_farki": 0.00127,
+          "ga": [
+            -0.01603,
+            0.01918
+          ],
+          "p": 0.8891,
+          "ir": [
+            0.1968,
+            0.1473
+          ]
+        }
+      ],
+      "yorum": "IC farki uc tohumda da SIFIRDAN AYIRT EDILEMIYOR (p=0,38 / 0,51 / 0,89; guven araliklari sifiri iceriyor). Buna karsilik risk-ayarli IR uc tohumun UCUNDE DE DUSUYOR. Yani en iyi ihtimalle notr, buyuk olasilikla zararli."
+    },
+    "yan_bulgu": "Tohum degiskenligi buyuk (ham kolda IC 0,0167-0,0193, agac sayisi 5-7). Bu nedenle TEK kosumluk karsilastirmalar bu kurulumda guvenilir degildir; ilk (hatali) deneyin olumlu gorunmesinin bir nedeni de budur."
+  }
 }
