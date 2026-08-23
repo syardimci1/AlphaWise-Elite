@@ -61,11 +61,8 @@ print("\n[BIRLESTIRME]", flush=True)
 files = sorted(f for f in os.listdir(PQ_DIR) if f.endswith(".parquet"))
 if not files:
     print("HATA: hic parquet uretilmedi, cikiliyor", flush=True); sys.exit(1)
-print("  (Polars ile okunuyor - %48 daha az bellek)", flush=True)
-_pl = pl.concat([pl.read_parquet(f"{PQ_DIR}/{f}") for f in files])
-data = _pl.to_pandas(); del _pl; gc.collect()
-data = data.set_index(data.columns[:2].tolist()) if not isinstance(data.index, pd.MultiIndex) else data
-data = data.sort_index()
+print("  (pandas ile okunuyor - MultiIndex korunmasi icin)", flush=True)
+data = pd.concat([pd.read_parquet(f"{PQ_DIR}/{f}") for f in files]).sort_index()
 gc.collect()
 print(f"Satir: {len(data)} | Bellek: {data.memory_usage(deep=True).sum()/1e9:.2f} GB", flush=True)
 
@@ -86,6 +83,31 @@ m_tr, m_va = ytr.notna(), yva.notna()
 Xtr, ytr = Xtr[m_tr], ytr[m_tr]
 Xva, yva = Xva[m_va], yva[m_va]
 print(f"Egitim: {len(Xtr)} | Dogrulama: {len(Xva)} | Test: {len(Xte)}", flush=True)
+
+# ===== ETIKET WINSORIZE (23.08.2026) — KRITIK DUZELTME =====
+# BULGU: Etiketlerin %99'u +-0.144 icindeydi ama maksimum 5453.5 (yani
+# %545.354'luk bir "gunluk getiri") — sifira yakin fiyat bolmesinden dogan
+# veri artefakti. 2,5M satirin yalnizca ~800'u |etiket|>1 ama L2 kaybinin
+# neredeyse tamamini onlar uretiyordu (ortalamaya gore L2=13.59; etiketler
+# +-%20'ye kirpilsa 0.0016 — 8.300 kat fark).
+# SONUC: LightGBM tum kapasitesini bu imkansiz degerlere harciyor, erken
+# durdurma "ilk agactan sonrasi iyilesmiyor" diyip modeli TEK AGACTA
+# birakiyordu. Butun egitim gecmisinde "En iyi iterasyon: 1" yaziyordu ve
+# 6.514 hisse icin yalnizca 25 tekil skor uretiliyordu (%93'u ayni deger).
+#
+# OLCULEN ETKI (izole deney, test etiketleri DOKUNULMADAN):
+#   agac  1 -> 14 | IC 0.00678 -> 0.04223 | RankIC -0.01808 -> +0.01501
+#   IR 0.0888 -> 0.4449 | pozitif gun %43.1 -> %75.0 | tekil tahmin 59 -> 11946
+#
+# SIZINTI YOK: sinirlar YALNIZCA egitim kumesinden hesaplanir; dogrulamaya
+# ayni sinirlar uygulanir; TEST etiketleri hic kirpilmaz (olcum durust kalir).
+_alt, _ust = ytr.quantile(0.001), ytr.quantile(0.999)
+_kirpilan = int(((ytr < _alt) | (ytr > _ust)).sum())
+print(f"Etiket winsorize: [{_alt:.4f}, {_ust:.4f}] | kirpilan egitim satiri: "
+      f"{_kirpilan} ({_kirpilan/len(ytr)*100:.3f}%) | test etiketi DOKUNULMADI",
+      flush=True)
+ytr = ytr.clip(_alt, _ust)
+yva = yva.clip(_alt, _ust)
 
 # ================= ASAMA 3: egitim =================
 print("\n[EGITIM] LightGBM...", flush=True)
@@ -132,6 +154,21 @@ print(f"Havuzlanmis IC (eski yontem) : {pooled:.5f}", flush=True)
 print(f"GUNLUK KESITSEL IC (standart): {ic_mean:.5f}  (std {ic_std:.4f})", flush=True)
 print(f"Rank IC (Spearman)           : {ric_mean:.5f}  (std {ric_std:.4f})", flush=True)
 print(f"IR (IC/std - istikrar)       : {ir:.4f}", flush=True)
+
+# --- PERFORMANS GECMISI: her egitimin sonucunu JSON'a ekle (18.08.2026) ---
+import json as _json
+from datetime import datetime as _dt
+try:
+    _kayit = {
+        "trained_at": _dt.now().isoformat(),
+        "pooled_ic": float(pooled), "ic_mean": float(ic_mean), "ic_std": float(ic_std),
+        "ric_mean": float(ric_mean), "ric_std": float(ric_std), "ir": float(ir),
+    }
+    with open("/app/models/training_history.jsonl", "a") as _f:
+        _f.write(_json.dumps(_kayit) + "\n")
+    print(f"[performans_gecmisi] JSON'a kaydedildi.", flush=True)
+except Exception as _e:
+    print(f"[performans_gecmisi] kayit hatasi: {_e}", flush=True)
 print(f"Pozitif gun orani            : {hit:.1%}", flush=True)
 print(f"Test gunu sayisi             : {len(daily)}", flush=True)
 print("-" * 60, flush=True)

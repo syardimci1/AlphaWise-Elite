@@ -87,3 +87,47 @@ def equity_price(ticker: str, provider: str = "yfinance", start_date: str = None
         return result
     except Exception as e:
         return {"error": str(e), "provider": provider}
+
+
+# ===== KULLANILMAYAN OPENBB UCLARI ACILDI (23.08.2026, Faz 4/C2) =====
+# Servis bugune kadar yalnizca /equity/price sunuyordu; OpenBB'nin
+# fundamentals / ownership / news aileleri hic kullanilmiyordu.
+# Hepsi SALT OKUNUR ve yon kodu uretmez.
+
+
+def _obb_cagir(fn, **kwargs):
+    """Ortak sarmalayici: DataFrame'e cevir, NaN -> null, hatayi yut."""
+    try:
+        df = fn(**kwargs).to_dataframe().reset_index()
+        return [_json_guvenli(r) for r in df.to_dict(orient="records")]
+    except Exception as e:
+        return {"error": str(e), "provider": kwargs.get("provider")}
+
+
+@app.get("/equity/fundamental/{ticker}")
+def equity_fundamental(ticker: str, provider: str = "yfinance", limit: int = 8):
+    """Temel finansal oranlar/metrikler (ceyreklik veya yillik)."""
+    return _obb_cagir(obb.equity.fundamental.metrics,
+                      symbol=ticker.upper(), provider=provider, limit=limit)
+
+
+@app.get("/equity/fundamental/{ticker}/income")
+def equity_income(ticker: str, provider: str = "yfinance", limit: int = 8):
+    """Gelir tablosu."""
+    return _obb_cagir(obb.equity.fundamental.income,
+                      symbol=ticker.upper(), provider=provider, limit=limit)
+
+
+# NOT — equity.ownership.institutional ucu BILEREK EKLENMEDI (23.08.2026):
+# OpenBB bu uc icin YALNIZCA `fmp` saglayicisini kabul ediyor
+# ("Input should be 'fmp'"), yani her cagri PAYLASILAN UCRETLI FMP kotasindan
+# duser. Ayni bilgi (kurumsal 13F pozisyonlari) sec-edgar-13f-service (8240)
+# tarafindan SEC'in resmi verisinden UCRETSIZ ve sinirsiz saglaniyor.
+# CLAUDE.md butce kurali geregi ucretli bir kopya eklenmedi.
+
+
+@app.get("/news/company/{ticker}")
+def news_company(ticker: str, provider: str = "yfinance", limit: int = 20):
+    """Sirkete ozel haber basliklari (duygu analizi YAPILMAZ, ham baslik)."""
+    return _obb_cagir(obb.news.company,
+                      symbol=ticker.upper(), provider=provider, limit=limit)

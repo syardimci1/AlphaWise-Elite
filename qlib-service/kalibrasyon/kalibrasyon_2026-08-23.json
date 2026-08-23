@@ -1,0 +1,45 @@
+{
+  "tarih": "2026-08-23",
+  "kapsam": "ADIM A.2 — signal-ledger'a baglanan iki yeni sinyalin kalibrasyonu",
+  "metodoloji": "God Mode disiplini: zaman bolmeli, taban orani karsilastirmasi, Brier iyilesmesi >= +%2 esigi, Fisher z ve bootstrap guven araliklari",
+  "sinyaller": {
+    "qlib_score": {
+      "kalibre_edildi": true,
+      "veri": {
+        "ornek_disi_gozlem": 469456,
+        "gun": 74,
+        "test_penceresi": "2026-05-01 .. 2026-08-14",
+        "dogrulama_penceresi": "2026-01-02 .. 2026-04-30",
+        "look_ahead_kontrolu": "ortak gun sayisi 0; dogrulama testten ONCE bitiyor"
+      },
+      "taban_orani": 0.4542,
+      "gunluk_kesitsel_ic": 0.04223,
+      "ic_95_ga": [0.02030, 0.06415],
+      "ic_fisher_z_95_ga": [0.02033, 0.06650],
+      "ic_bootstrap_95_ga": [0.02245, 0.06764],
+      "ic_bootstrap_p_pozitif": 1.0,
+      "rank_ic": 0.01501,
+      "rank_ic_fisher_95_ga": [-0.00063, 0.03077],
+      "rank_ic_sifiri_iceriyor": true,
+      "brier_iyilesme_yuzde": {
+        "ham_yuzdelik_sira_KALIBRE_EDILMEMIS": -30.016,
+        "platt_dogrulamada_kalibre": 0.077,
+        "izotonik_dogrulamada_kalibre": 0.439,
+        "en_iyi": 0.439
+      },
+      "god_mode_esigi_gecti": false,
+      "lambda": 0.0,
+      "karar": "LAMBDA 0'DA KALIR. IC istatistiksel olarak sifirdan farkli (bootstrap P=1.000) ama God Mode'un kendi olcutu olan Brier iyilesmesi +%0.44 ile +%2 esiginin altinda; ayrica Rank IC guven araligi sifiri iceriyor, yani hisse siralamasi anlamli degil. Karar formulune (total_score / EKLE-TUT-BEKLE-DIKKAT ET) BAGLANMADI.",
+      "not_onemli": "Bu olcum, ayni gun uygulanan ETIKET WINSORIZE duzeltmesinden SONRA yapildi. Duzeltme oncesi model tek agactan olusuyordu (IC 0.00678, Rank IC -0.01808) ve olcum anlamsizdi."
+    },
+    "finrlx_score": {
+      "kalibre_edildi": false,
+      "sebep": "YETERSIZ VERI — signal_ledger'da finrlx_score dolu 2 gozlem var, 1 gune ait (2026-08-23). God Mode esigi icin 1.000+ gozlem ve coklu gun gerekiyor.",
+      "veri": {"gozlem": 2, "farkli_gun": 1},
+      "gerekli_adim": "Gecmise donuk doldurma: finrl-signal /signal/adaptive_rotation cagrisi tarih basina ~64 sn olculdu; 100 islem gunu icin ~1,8 saat CPU. Ayrica sinyal gun basina yalnizca ~6 hisseye pay veriyor, yani kesitsel orneklem cok dar.",
+      "lambda": 0.0,
+      "karar": "LAMBDA 0'DA KALIR (olculmedi, dolayisiyla dogrulanmadi)."
+    }
+  },
+  "karar_formulune_etki": "YOK. Iki sinyal de yalnizca signal_ledger'a KAYDEDILIR; total_score ve decision MAA'dan geldigi gibi yazilir. CLAUDE.md karar kodlari kurali korunmustur."
+}

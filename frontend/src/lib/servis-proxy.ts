@@ -17,12 +17,23 @@ import { NextResponse } from 'next/server'
 //   3. Servis hata verirse sessizce basarisiz OLUNMAZ; kullaniciya neden
 //      veri gelmedigini soyleyen anlamli bir mesaj doner.
 
-// Buyuk harf + rakam ile baslar; nokta ve tire yalnizca devaminda olabilir.
-// Bu sayede '..' ve '../' gibi diziler daha ilk kapida reddedilir.
-const TICKER_DESENI = /^[A-Z0-9][A-Z0-9.-]{0,9}$/
+// Ticker = harf/rakam bloklari, aralarinda TEK bir nokta veya tire.
+//
+// 23.08.2026 DUZELTME: onceki desen /^[A-Z0-9][A-Z0-9.-]{0,9}$/ idi ve ilk
+// karakterden sonra ardisik noktalara izin veriyordu; 'A..', 'A.', 'A--B',
+// 'A.B.' gibi bozuk semboller yukari servislere gidiyordu. ('../' zaten
+// reddediliyordu, yani yol asimi acigi DEGILDI; sorun bozuk sembolun
+// SEC/FINRA gibi dis kaynaklara iletilmesiydi.)
+//
+// REGRESYON KANITI: yeni desen, qlib deposundaki 6.755 gercek ABD
+// hissesinin 6.755'ini de kabul ediyor (sifir kayip); BRK.B, BF-B, RDS.A
+// gibi ozel bicimler korunuyor. Yalnizca bozuk diziler reddediliyor.
+const TICKER_DESENI = /^[A-Z0-9]+(?:[.-][A-Z0-9]+)*$/
+const TICKER_MAKS_UZUNLUK = 10
 
 export function tickerDogrula(ham: string): string | null {
   const t = (ham || '').toUpperCase()
+  if (t.length === 0 || t.length > TICKER_MAKS_UZUNLUK) return null
   return TICKER_DESENI.test(t) ? t : null
 }
 

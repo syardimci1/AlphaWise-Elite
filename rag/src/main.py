@@ -20,6 +20,23 @@ CHROMA_PORT = int(os.getenv("CHROMA_PORT", 8000))
 DATA_ROOT = os.getenv("DATA_ROOT", "/data")
 COLLECTION_NAME = "alphawise_knowledge"
 
+# ===== SINYAL KOLEKSIYONLARI (23.08.2026, Faz 5/C3) =====
+# Mevcut alphawise_knowledge koleksiyonuna DOKUNULMAZ; bunlar AYRI
+# koleksiyonlardir. Amac: MAA'nin RAG sorgusu yalnizca statik metodoloji
+# belgelerini degil, CANLI piyasa gozlemlerini de gorebilsin.
+SINYAL_KOLEKSIYONLARI = {
+    "finra_darkpool": os.getenv("FINRA_URL", "http://finra-darkpool:8000"),
+    "sec_edgar_13f": os.getenv("SEC13F_URL", "http://sec-edgar-13f:8000"),
+    "news_monitor": os.getenv("NEWS_URL", "http://news-monitor:8000"),
+}
+_sinyal_kol = {}
+
+
+def get_sinyal_collection(ad: str):
+    if ad not in _sinyal_kol:
+        _sinyal_kol[ad] = get_chroma_client().get_or_create_collection(name=ad)
+    return _sinyal_kol[ad]
+
 _client = None
 _collection = None
 
@@ -122,3 +139,107 @@ def query_knowledge_base(q: str, n_results: int = 5):
     for doc, meta, dist in zip(docs, metas, distances):
         hits.append({"content": doc, "source": meta.get("source"), "distance": dist})
     return {"query": q, "results": hits}
+
+
+# ===== C3: CANLI SINYAL CIKTILARINI CHROMADB'YE INDEKSLE =====
+import httpx as _httpx
+from datetime import datetime as _dt
+
+
+def _belge(baslik: str, govde: str) -> str:
+    return f"{baslik}\n{govde}".strip()
+
+
+@app.post("/index-sinyaller")
+def index_sinyaller(tickers: str = "AAPL,MSFT,NVDA"):
+    """finra-darkpool / sec-edgar-13f / news-monitor ciktilarini AYRI
+    koleksiyonlara indeksler. alphawise_knowledge koleksiyonuna DOKUNMAZ.
+    """
+    liste = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    damga = _dt.utcnow().isoformat(timespec="seconds")
+    sonuc = {}
+
+    # --- 1) FINRA dark pool (haftalik ATS + gunluk Reg SHO) ---
+    kol = get_sinyal_collection("finra_darkpool")
+    d_belge, d_id, d_meta = [], [], []
+    for t in liste:
+        for yol, etiket in ((f"/darkpool/{t}", "haftalik_ats"),
+                            (f"/regsho/{t}?gun=5", "gunluk_regsho")):
+            try:
+                r = _httpx.get(SINYAL_KOLEKSIYONLARI["finra_darkpool"] + yol, timeout=120.0)
+                if r.status_code != 200:
+                    continue
+                d_belge.append(_belge(f"[FINRA {etiket}] {t}", str(r.json())[:4000]))
+                d_id.append(f"finra::{etiket}::{t}::{damga}")
+                d_meta.append({"kaynak": "finra-darkpool", "tur": etiket,
+                               "ticker": t, "cekilme": damga})
+            except Exception:
+                continue
+    if d_belge:
+        kol.add(documents=d_belge, ids=d_id, metadatas=d_meta)
+    sonuc["finra_darkpool"] = {"eklenen": len(d_belge), "toplam": kol.count()}
+
+    # --- 2) SEC EDGAR 13F ---
+    kol = get_sinyal_collection("sec_edgar_13f")
+    s_belge, s_id, s_meta = [], [], []
+    for t in liste:
+        try:
+            r = _httpx.get(SINYAL_KOLEKSIYONLARI["sec_edgar_13f"] + f"/holders/{t}?top=8",
+                           timeout=180.0)
+            if r.status_code != 200:
+                continue
+            s_belge.append(_belge(f"[SEC 13F kurumsal pozisyon] {t}", str(r.json())[:4000]))
+            s_id.append(f"sec13f::{t}::{damga}")
+            s_meta.append({"kaynak": "sec-edgar-13f", "ticker": t, "cekilme": damga})
+        except Exception:
+            continue
+    if s_belge:
+        kol.add(documents=s_belge, ids=s_id, metadatas=s_meta)
+    sonuc["sec_edgar_13f"] = {"eklenen": len(s_belge), "toplam": kol.count()}
+
+    # --- 3) news-monitor uyarilari ---
+    kol = get_sinyal_collection("news_monitor")
+    n_belge, n_id, n_meta = [], [], []
+    try:
+        r = _httpx.get(SINYAL_KOLEKSIYONLARI["news_monitor"] + "/alerts", timeout=60.0)
+        if r.status_code == 200:
+            for i, a in enumerate(r.json().get("alerts", [])):
+                bas = a.get("headline") or ""
+                if not bas:
+                    continue
+                duygu = a.get("sentiment") or {}
+                n_belge.append(_belge(
+                    f"[Haber] {a.get('ticker','?')} — {bas}",
+                    f"kaynak={a.get('source')} duygu={duygu.get('label')} "
+                    f"skor={duygu.get('score')} zaman={a.get('logged_at')}"))
+                n_id.append(f"news::{a.get('ticker','?')}::{a.get('news_time', i)}::{i}")
+                n_meta.append({"kaynak": "news-monitor", "ticker": a.get("ticker", "?"),
+                               "duygu": str(duygu.get("label")), "cekilme": damga})
+    except Exception:
+        pass
+    if n_belge:
+        kol.add(documents=n_belge, ids=n_id, metadatas=n_meta)
+    sonuc["news_monitor"] = {"eklenen": len(n_belge), "toplam": kol.count()}
+
+    return {"indekslenen": sonuc, "tickers": liste, "zaman": damga}
+
+
+@app.get("/query-sinyaller")
+def query_sinyaller(q: str, n_results: int = 3, koleksiyon: str = None):
+    """Sinyal koleksiyonlarinda arama. koleksiyon bos ise UCUNDE de arar."""
+    adlar = ([koleksiyon] if koleksiyon else list(SINYAL_KOLEKSIYONLARI))
+    cikti = {}
+    for ad in adlar:
+        try:
+            kol = get_sinyal_collection(ad)
+            if kol.count() == 0:
+                cikti[ad] = {"uyari": "koleksiyon bos — once /index-sinyaller cagirin"}
+                continue
+            r = kol.query(query_texts=[q], n_results=min(n_results, kol.count()))
+            cikti[ad] = [
+                {"icerik": d[:400], "meta": m, "uzaklik": u}
+                for d, m, u in zip(r["documents"][0], r["metadatas"][0], r["distances"][0])
+            ]
+        except Exception as e:
+            cikti[ad] = {"hata": f"{type(e).__name__}: {e}"}
+    return {"sorgu": q, "sonuclar": cikti}

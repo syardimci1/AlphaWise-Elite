@@ -17,6 +17,49 @@ load_dotenv()
 app = FastAPI(title="ALPHAWISE - Signal Ledger")
 
 MAA_URL = os.getenv("MAA_URL", "http://maa:8000")
+QLIB_URL = os.getenv("QLIB_URL", "http://qlib:8000")
+FINRL_URL = os.getenv("FINRL_URL", "http://finrl-signal:8000")
+FINRL_STRATEJI = os.getenv("FINRL_STRATEJI", "adaptive_rotation")
+
+# 23.08.2026 — Faz 1 ADIM A.1: qlib_score ve finrlx_score artik gercek deger
+# tasiyor. DIKKAT: bu YALNIZCA veri akisidir. total_score ve decision hala
+# MAA'dan geldigi gibi yazilir; karar formuluyle HICBIR baglanti kurulmadi
+# (CLAUDE.md karar kodlari kurali + kalibrasyon henuz yapilmadi, ADIM A.2).
+#
+# FinRL cagrisi deploy.sh'yi calistirdigi icin PAHALI (olculdu: 63,7 sn) ve
+# gunde bir kez degisen bir PORTFOY dondurur, hisse basina skor degil. Bu
+# yuzden gun bazinda surec-ici onbelleklenir; hisse skoru o portfoydeki
+# agirliktir. Portfoyde olmayan hisse icin 0.0 GERCEK bir degerdir
+# ("strateji bu hisseye pay ayirmadi"), None ise "cagri basarisiz" demektir.
+_finrl_onbellek = {"tarih": None, "portfoy": None, "rejim": None}
+
+
+async def _qlib_skor(client, ticker):
+    """qlib gunluk skor onbelleginden okur (milisaniye)."""
+    try:
+        r = await client.get(f"{QLIB_URL}/predict/{ticker}", timeout=20.0)
+        return r.json().get("score")
+    except Exception:
+        return None
+
+
+async def _finrl_portfoy(client):
+    """Gunun hedef portfoyunu dondurur (gun basina bir kez hesaplanir)."""
+    from datetime import date as _date
+    bugun = _date.today().isoformat()
+    if _finrl_onbellek["tarih"] == bugun:
+        return _finrl_onbellek["portfoy"]
+    try:
+        r = await client.get(f"{FINRL_URL}/signal/{FINRL_STRATEJI}", timeout=180.0)
+        sinyal = (r.json() or {}).get("signal") or {}
+        portfoy = sinyal.get("target_portfolio")
+        if isinstance(portfoy, dict):
+            _finrl_onbellek.update(tarih=bugun, portfoy=portfoy,
+                                   rejim=sinyal.get("market_regime"))
+            return portfoy
+    except Exception:
+        pass
+    return None
 
 def get_db():
     return psycopg2.connect(
@@ -50,6 +93,12 @@ async def capture(ticker: str):
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"MAA'ya ulasilamadi: {e}")
 
+        # Iki yeni sinyal — MAA'dan BAGIMSIZ olarak, kendi kaynaklarindan.
+        qlib_score = await _qlib_skor(client, ticker)
+        _portfoy = await _finrl_portfoy(client)
+        finrlx_score = (None if _portfoy is None
+                        else float(_portfoy.get(ticker, 0.0)))
+
     layer_scores = data.get("layer_scores", {})
     raw = data.get("raw_data", {})
 
@@ -72,8 +121,8 @@ async def capture(ticker: str):
         "faa_score": layer_scores.get("faa"),
         "raa_score": layer_scores.get("raa"),
         "sentiment_score": sentiment_score if sentiment_score is not None else layer_scores.get("saa"),
-        "qlib_score": None,      # HAZIR-BEKLIYOR
-        "finrlx_score": None,    # HAZIR-BEKLIYOR
+        "qlib_score": qlib_score,
+        "finrlx_score": finrlx_score,
         "total_score": data.get("total_score"),
         "decision": data.get("decision"),
         "raw_json": json.dumps(data),
@@ -101,6 +150,10 @@ async def capture(ticker: str):
         "price": price,
         "signals": {k: row[k] for k in ["taa_score","faa_score","raa_score","sentiment_score","qlib_score","finrlx_score"]},
         "decision": row["decision"],
+        "finrl_rejim": _finrl_onbellek.get("rejim"),
+        "not": ("qlib_score ve finrlx_score YALNIZCA kaydedilir; total_score "
+                "ve decision ile hicbir baglantisi yoktur (kalibrasyon "
+                "yapilmadi, lambda=0)."),
     }
 
 

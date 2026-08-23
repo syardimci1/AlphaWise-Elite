@@ -12,6 +12,7 @@ import asyncio
 from fastapi import FastAPI, Query, HTTPException
 
 from . import finra
+from . import regsho
 
 app = FastAPI(
     title="ALPHAWISE - FINRA Dark Pool Service",
@@ -144,3 +145,31 @@ async def venues(
         "aktif_ats_sayisi": ozet["dark_pool"]["aktif_ats_sayisi"],
         "venues": ozet["venues"][:top],
     }
+
+
+# ===== GUNLUK Reg SHO KISA HACIM (23.08.2026, Faz 2/C1) =====
+# Mevcut HAFTALIK ATS uclarina DOKUNULMADI; bunlar onlarin yanina eklendi.
+
+
+@app.get("/regsho/{ticker}")
+async def regsho_gunluk(
+    ticker: str,
+    gun: int = Query(10, ge=1, le=60, description="Kac yayimlanmis is gunu"),
+):
+    """FINRA Reg SHO GUNLUK kisa hacim orani (T+1). Yon iddiasi tasimaz."""
+    t = ticker.upper().strip()
+    if not t.isalnum() or len(t) > 6:
+        raise HTTPException(status_code=400, detail="gecersiz ticker bicimi")
+    try:
+        return await regsho.son_gunler(t, gun=gun, geriye_bak=gun * 3 + 10)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")
+
+
+@app.get("/regsho-durum")
+async def regsho_durum():
+    """Gunluk dosyalarin yayim durumu (teshis)."""
+    try:
+        return await regsho.kaynak_durumu()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")

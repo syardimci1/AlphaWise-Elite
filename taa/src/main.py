@@ -151,6 +151,7 @@ def analyze(ticker: str, period: str = "6mo"):
 import vectorbt as vbt
 
 from . import walkforward as wf
+from . import formasyon as fm
 
 
 @app.get("/backtest/{ticker}")
@@ -259,5 +260,36 @@ def backtest_technical_strategy(
                 "yatirim tavsiyesi degildir."
             ),
         }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/formasyon/{ticker}")
+def candlestick_formasyonlari(ticker: str, period: str = "6mo", gun: int = 10):
+    """Klasik mum formasyonlarini OLGUSAL olarak tespit eder (23.08.2026).
+
+    Fikir kaynagi anupama-srivastava/market-pattern-recognition (MIT); kod
+    kopyalanmadi, yeniden yazildi ve kaynaktaki iki dogrulanmis hata
+    giderildi (bkz. formasyon.py). Bilgisayarli goru sinifi port EDILMEDI.
+
+    DIKKAT: Formasyonlarin bu sistemdeki ongoru gucu KALIBRE EDILMEMISTIR.
+    Cikti karar koduna (EKLE/TUT/BEKLE/DIKKAT ET) baglanmaz, yalnizca
+    gozlem/baglam katmanidir.
+    """
+    try:
+        data = get_price_data(ticker, period=period)
+        if data.empty:
+            return {"error": f"{ticker} icin veri bulunamadi"}
+        gerekli = {"Open", "High", "Low", "Close"}
+        if not gerekli.issubset(data.columns):
+            return {"error": f"eksik sutun: {sorted(gerekli - set(data.columns))}"}
+        d = data[["Open", "High", "Low", "Close"]].dropna().sort_index()
+        if len(d) < 25:
+            return {"error": f"{ticker}: yetersiz bar ({len(d)}, gereken >= 25)"}
+        ozet = fm.son_bar_ozeti(d, gun=gun)
+        ozet["ticker"] = ticker.upper()
+        ozet["period"] = period
+        ozet["bar_sayisi"] = len(d)
+        return ozet
     except Exception as e:
         return {"error": str(e)}
