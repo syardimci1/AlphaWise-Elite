@@ -97,12 +97,26 @@ services:
     restart: unless-stopped
     environment:
       REPORTS_DIR: /reports
+      # 23.08.2026 — SUNUCU TARAFI OTURUM DOGRULAMA icin.
+      # NEXT_PUBLIC_SUPABASE_URL (http://localhost:8020) TARAYICI adresidir;
+      # konteynerin kendi localhost'u Supabase DEGILDIR. Sunucu tarafi
+      # dogrulama bu ic adresi kullanir. Cerez ADI yine genel url'den
+      # turetilir (bkz. src/lib/oturum.ts).
+      SUPABASE_INTERNAL_URL: http://supabase-kong:8000
     volumes:
       # Gun sonu raporlari - SALT OKUNUR (:ro). Dashboard bu dizini yalnizca
       # listeler ve .pdf indirir; hicbir kosulda yazamaz.
       - /opt/alphawise/reports:/reports:ro
     ports:
       - "127.0.0.1:3000:3000"
+    # Supabase AYRI bir compose projesinde (supabase_default agi) calisiyor.
+    # Sunucu tarafi oturum dogrulamasinin kimlik sunucusuna ulasabilmesi icin
+    # frontend HER IKI aga da baglanir. `default` acikca yazilmak ZORUNDA:
+    # bir servis networks tanimlarsa varsayilan aga otomatik katilmaz ve
+    # alphawise-net'teki tum ic servislere (MAA, godmode...) erisimi kopardi.
+    networks:
+      - default
+      - supabase
 
   openbb:
     build: ./openbb-service
@@ -444,4 +458,9 @@ services:
 networks:
   default:
     name: alphawise-net
+    external: true
+  # Supabase kendi compose projesiyle ayaga kalkiyor; burada YALNIZCA
+  # referans verilir (external), bu dosya onu olusturmaz/yonetmez.
+  supabase:
+    name: supabase_default
     external: true

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { oturumCereziVarMi, oturumDogrula } from '@/lib/oturum'
 
 // ============================================================================
 // HIZ SINIRLAMA (rate limiting) — 23.08.2026
@@ -29,6 +30,11 @@ import { NextRequest, NextResponse } from 'next/server'
 //    tanimli degil) — bu bilinen ve belgelenmis sinirdir.
 //  * Maliyet siniflarina gore KADEMELI sinir: kredi harcayan uc en dar,
 //    salt okunur yerel uc en genis.
+// ============================================================================
+// 23.08.2026 EK: bu dosya artik SADECE hiz sinirlamasi yapmiyor; /api/*
+// altindaki tum uclar icin OTURUM ZORUNLULUGUNU da burada uyguluyor
+// (bkz. src/lib/oturum.ts). Tek noktadan uygulanmasinin nedeni: yeni bir
+// route eklendiginde kimlik kontrolunun UNUTULAMAMASI.
 // ============================================================================
 
 type Kova = { jeton: number; sonDolum: number }
@@ -170,7 +176,17 @@ function izinVar(anahtar: string, sinif: Sinif, simdi: number) {
   return { izin: false, kalan: 0, bekle }
 }
 
-export function middleware(req: NextRequest) {
+// Kimlik dogrulanamadiginda donen ortak yanit. Sebep DISARIYA ayrintili
+// verilmez ("cerez yok" ile "jeton gecersiz" ayrimi saldirgana bilgi olur);
+// ayrintili sebep yalnizca X-Oturum basliginda teshis icin tutulur.
+function kimlikReddi(sebep: string) {
+  return NextResponse.json(
+    { hata: 'Kimlik dogrulanamadi', detay: 'Bu uc icin oturum acmis olmalisiniz.' },
+    { status: 401, headers: { 'X-Oturum': sebep } },
+  )
+}
+
+export async function middleware(req: NextRequest) {
   const yol = yoluCoz(req.nextUrl.pathname)
   const sinif = sinifBelirle(yol)
   if (!sinif) return NextResponse.next()
@@ -185,6 +201,14 @@ export function middleware(req: NextRequest) {
       { status: 403 },
     )
   }
+
+  // --- KIMLIK, ADIM 1/2: cerez var mi? (bedava, aga cikmaz, jeton yakmaz) ---
+  // Sirasi bilincli: kimliksiz istek sunucumuza tek bir HTTP cagrisi bile
+  // yaptirmadan, ayrica hiz sinirlama jetonu da harcamadan reddedilir.
+  // Jeton harcatmamasi onemli: aksi halde kimliksiz bir sel, ortak kovayi
+  // bosaltip MESRU kullaniciyi kilitleyen bir hizmet engellemeye donusurdu
+  // (ayni tuzak MAA beyaz listesinde de bulunup duzeltilmisti).
+  if (!oturumCereziVarMi(req)) return kimlikReddi('cerez_yok')
 
   const { izin, kalan, bekle } = izinVar(anahtar, sinif, simdi)
   // 23.08.2026: X-RateLimit-Limit `dakikada` degerini bildiriyordu ama ANLIK
@@ -216,6 +240,14 @@ export function middleware(req: NextRequest) {
   }
 
   const yanit = NextResponse.next()
+
+  // --- KIMLIK, ADIM 2/2: jetonu Supabase'e DOGRULAT ---
+  // Cerezin varligi yetmez; cerez istemci tarafindan yazilabilir. Imza ve
+  // sure kontrolu kimlik sunucusunda yapilir. Hiz sinirlamasindan SONRA
+  // gelir, cunku bu adim ag cagrisi yapar ve sinirsiz tekrarlanmamalidir.
+  const oturum = await oturumDogrula(req, yanit)
+  if (!oturum.gecerli) return kimlikReddi(oturum.sebep)
+
   yanit.headers.set('X-RateLimit-Limit', String(limit))
   yanit.headers.set('X-RateLimit-Anlik-Tavan', String(anlikTavan))
   yanit.headers.set('X-RateLimit-Remaining', String(kalan))
