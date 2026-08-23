@@ -46,7 +46,20 @@ for i, ticker in enumerate(completed):
         yeni = yeni.rename(columns={"report_date": "date"})
         yeni["date"] = pd.to_datetime(yeni["date"])
         yeni["factor"] = 1.0
-        yeni = yeni[yeni["date"] > son_tarih][["date", "open", "high", "low", "close", "volume", "factor"]]
+        # SUTUN SIRASI HATASI DUZELTMESI (23.08.2026):
+        # Depoda IKI farkli baslik duzeni var:
+        #   A) date,open,high,low,close,volume,factor   (defeatbeta toplu cekim)
+        #   B) date,open,close,high,low,volume,factor   (Tiingo/qlib yolu)
+        # Bu satir onceden A duzenini SABIT KODLUYOR ve header=False ile
+        # ekliyordu; B tipi dosyalarda close/high/low sutunlari kayiyor ve bar
+        # "high < max(open,close)" gibi imkansiz degerler aliyordu
+        # (2.589 dosyada 17.642 satir bu sekilde bozulmustu).
+        # Cozum: sutun sirasi, hedef dosyanin KENDI basligindan okunur.
+        hedef_sutunlar = list(mevcut.columns)
+        eksik = [s for s in hedef_sutunlar if s not in yeni.columns]
+        if eksik:
+            raise ValueError(f"{ticker}: kaynakta eksik sutun {eksik}")
+        yeni = yeni[yeni["date"] > son_tarih][hedef_sutunlar]
 
         if len(yeni) > 0:
             yeni.to_csv(csv_path, mode="a", header=False, index=False)
