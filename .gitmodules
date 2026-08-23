@@ -1,0 +1,41 @@
+# ===========================================================================
+# finrl-x — AI4Finance FinRL-Trading temelli yerel calisma kopyasi
+#
+# NEDEN BU KAYIT VAR (23.08.2026):
+# finrl-x bugune kadar ana depoda "gitlink" olarak duruyordu (mod 160000)
+# ama .gitmodules kaydi YOKTU. Sonucu: `git submodule status` hata veriyordu
+# ("no submodule mapping found in .gitmodules for path 'finrl-x'"), ana depo
+# alt deponun hangi surumde olmasi gerektigini kaydedemiyordu ve depoyu
+# klonlayan biri finrl-x'i HIC alamiyordu.
+#
+# URL neden upstream DEGIL: bu dizin AI4Finance-Foundation/FinRL-Trading
+# klonu olarak baslamisti, ama artik AlphaWise yamalarini iceriyor
+# (paylasilan FMP kota bekcisi). Upstream'e yazma hakkimiz yok ve ic
+# mimarimizi ucuncu tarafin acik deposuna koymak da dogru olmaz; bu yuzden
+# ozel bir kopyaya isaret eder.
+#
+# UPSTREAM (koken):  https://github.com/AI4Finance-Foundation/FinRL-Trading.git
+# Buraya YORUM olarak yaziliyor cunku git remote'lari depo ICERIGININ
+# parcasi DEGILDIR: temiz bir klonda alt depoda yalnizca `origin` bulunur.
+# Yani calisma sunucusunda tanimli `upstream` remote'u (push URL'si bilerek
+# kapatilmistir) baska bir klona GECMEZ. Upstream'den guncelleme cekmek
+# isteyen, alt depo icinde su komutla remote'u kendisi ekler:
+#   git remote add upstream https://github.com/AI4Finance-Foundation/FinRL-Trading.git
+#   git remote set-url --push upstream PUSH_KAPALI_ucuncu_taraf_deposu
+# Ikinci satir atlanmamalidir; aksi halde `git push upstream` ic mimariyi
+# ucuncu tarafin ACIK deposuna gondermeye calisir.
+#
+# ERISIM NOTU: syardimci1/finrl-x PRIVATE'tir. Ana depoyu klonlayan bir
+# hesabin `git submodule update --init` adimini gecebilmesi icin bu depoya
+# okuma yetkisi olmalidir.
+#
+# KIMLIK NOTU (olculdu): alt depo klonu ayri bir surecte calisir ve ANA
+# deponun YEREL credential.helper ayarini DEVRALMAZ. Kuresel bir yardimci
+# tanimli degilse `git submodule update --init` "could not read Username"
+# ile duser. Kalici ayar degistirmeden cozum:
+#   git -c credential.helper=store submodule update --init finrl-x
+# ===========================================================================
+[submodule "finrl-x"]
+	path = finrl-x
+	url = https://github.com/syardimci1/finrl-x.git
+	branch = master
