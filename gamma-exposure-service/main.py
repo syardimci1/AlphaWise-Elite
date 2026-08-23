@@ -517,3 +517,84 @@ async def health():
             **finra,
         },
     }
+
+
+# ===== DEX / VANNA MARUZIYETI (23.08.2026) =====
+# MEVCUT /gex ve /dix-like UCLARINA DOKUNULMADI.
+#
+# KRITIK: Bu uc FlashAlpha'yi HIC CAGIRMAZ, dolayisiyla gunluk 25'lik kotadan
+# HICBIR SEY TUKETMEZ. Zincir, zaten kurulu olan openbb-service'ten
+# `yfinance` saglayicisiyla alinir (ucretsiz, anahtarsiz).
+# Gerekce: FlashAlpha /gex ucretsiz planda 402 donuyor ve BASARISIZ CAGRI BILE
+# kotadan dusuyor (olculdu: 25 -> 24); ayrica bu servis FlashAlpha yanitini
+# hic ayristirmadigi icin kontrat bazli veri zaten elimizde yoktu.
+import dex_vanna as _dv
+
+OPENBB_TABAN = os.getenv("OPENBB_URL", "http://openbb:8000")
+DEX_ONBELLEK_TTL = int(os.getenv("DEX_TTL", "900"))   # 15 dk
+
+
+@app.get("/dex-vanna/{ticker}")
+async def dex_vanna(
+    ticker: str,
+    min_acik_pozisyon: int = Query(0, ge=0, le=100000,
+                                   description="Bu degerin altindaki OI'li kontratlar atlanir"),
+):
+    """Delta (DEX) ve Vanna maruziyeti — opsiyon zincirinden hesaplanir.
+
+    FlashAlpha kotasi TUKETMEZ. Yon kodu URETMEZ (kalibre edilmemistir).
+    """
+    t = ticker.upper().strip()
+    if not t.replace(".", "").replace("-", "").isalnum() or len(t) > 10:
+        raise HTTPException(status_code=400, detail="gecersiz ticker bicimi")
+
+    onbellek_anahtari = f"dexvanna:{t}:{min_acik_pozisyon}"
+    try:
+        r = _get_redis()
+        onbellek = r.get(onbellek_anahtari)
+        if onbellek:
+            veri = json.loads(onbellek)
+            veri["onbellekten"] = True
+            return veri
+    except Exception:
+        pass
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            yanit = await client.get(
+                f"{OPENBB_TABAN}/derivatives/options/chains/{t}")
+    except Exception as e:
+        raise HTTPException(status_code=502,
+                            detail=f"openbb-service'e ulasilamadi: {type(e).__name__}")
+    if yanit.status_code != 200:
+        raise HTTPException(status_code=502,
+                            detail=f"openbb-service HTTP {yanit.status_code}")
+    zincir = yanit.json()
+    if isinstance(zincir, dict) and "error" in zincir:
+        raise HTTPException(status_code=502, detail="opsiyon zinciri alinamadi")
+    if not isinstance(zincir, list) or not zincir:
+        raise HTTPException(status_code=404, detail=f"{t}: opsiyon zinciri bos")
+
+    spot = None
+    for k in zincir:
+        if k.get("underlying_price"):
+            spot = float(k["underlying_price"])
+            break
+    if not spot:
+        raise HTTPException(status_code=502, detail="dayanak fiyati bulunamadi")
+
+    if min_acik_pozisyon:
+        zincir = [k for k in zincir
+                  if (k.get("open_interest") or 0) >= min_acik_pozisyon]
+
+    sonuc = _dv.maruziyet_hesapla(zincir, spot)
+    sonuc["ticker"] = t
+    sonuc["kaynak"] = "openbb-service /derivatives/options/chains (yfinance) — UCRETSIZ"
+    sonuc["flashalpha_kotasi_tuketildi"] = False
+    sonuc["onbellekten"] = False
+    try:
+        _get_redis().setex(onbellek_anahtari, DEX_ONBELLEK_TTL,
+                       json.dumps(sonuc, default=str))
+    except Exception:
+        pass
+    return sonuc

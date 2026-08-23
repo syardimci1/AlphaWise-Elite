@@ -131,3 +131,16 @@ def news_company(ticker: str, provider: str = "yfinance", limit: int = 20):
     """Sirkete ozel haber basliklari (duygu analizi YAPILMAZ, ham baslik)."""
     return _obb_cagir(obb.news.company,
                       symbol=ticker.upper(), provider=provider, limit=limit)
+
+
+@app.get("/derivatives/options/chains/{ticker}")
+def options_chains(ticker: str, provider: str = "yfinance"):
+    """Opsiyon zinciri — yfinance saglayicisi UCRETSIZ ve anahtarsizdir.
+
+    23.08.2026'da eklendi; gamma-exposure-service'in /dex-vanna ucu bunu
+    okuyor. FlashAlpha kotasina HIC dokunmaz.
+    Olculen kapsam (AAPL): 2.418 kontrat, 20 vade, open_interest ve
+    implied_volatility alanlarinda %0 NaN.
+    """
+    return _obb_cagir(obb.derivatives.options.chains,
+                      symbol=ticker.upper(), provider=provider)
