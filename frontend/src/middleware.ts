@@ -4,8 +4,8 @@ import { oturumCereziVarMi, oturumDogrula } from '@/lib/oturum'
 // ============================================================================
 // HIZ SINIRLAMA (rate limiting) — 23.08.2026
 //
-// NEDEN: Denetimde olculdu — /api altindaki 13 route'un HICBIRINDE hiz
-// sinirlamasi yoktu. Canli kanit: 100 ardisik/es zamanli istek -> 100 x 200,
+// NEDEN: Denetimde olculdu — /api altindaki route'larin HICBIRINDE hiz
+// sinirlamasi yoktu (o gun 13 route vardi; 24.08.2026 itibariyle 16). Canli kanit: 100 ardisik/es zamanli istek -> 100 x 200,
 // tek bir 429 yok. En yuksek risk /api/maa/narrative-verified/<TICKER>:
 // her cagri OpenRouter kredisi harciyor ve proxy 504 dondurse bile MAA
 // kaskadi sonuna kadar gidip krediyi harcamaya devam ediyor.
@@ -54,9 +54,16 @@ const SINIFLAR = {
   // fazla dar bulundu. Dashboard'in NORMAL acilisi 9 sinyal kartini es
   // zamanli cagiriyor ve 10 jetonun 8'ini tuketiyordu (olculen kalan: 2).
   // Kullanici 20 saniye icinde iki kez yenilese KENDI dashboard'inda 429
-  // alacakti. Patlama 20'ye cikarildi: iki tam dashboard yenilemesi kadar
-  // pay birakir, kotuye kullanimi ise hala 60/dk ile sinirlar.
-  sinyal: { dakikada: 60, patlama: 20 },
+  // alacakti. Patlama 20'ye cikarildi.
+  //
+  // 24.08.2026 IKINCI AYAR: iki yeni kart (FRED makro + Finnhub) eklendi,
+  // dashboard acilisi artik 9 DEGIL 11 es zamanli istek yapiyor. Patlama
+  // 20'de kalsaydi 20 saniye icindeki IKI yenileme 22 jeton isteyecek ve
+  // kullanici yine KENDI dashboard'inda 429 alacakti — yani yeni kartlar
+  // mevcut kartlari bozacakti. Tavan 35'e cikarildi: uc tam yenilemeye
+  // (33 jeton) yer birakir, dakikalik 60 siniri ise DEGISMEDI, yani
+  // kotuye kullanima karsi koruma ayni kaldi.
+  sinyal: { dakikada: 60, patlama: 35 },
   // Yerel/ucuz: dosya listeleme, onbellekten okuma.
   ucuz: { dakikada: 120, patlama: 30 },
 } as const

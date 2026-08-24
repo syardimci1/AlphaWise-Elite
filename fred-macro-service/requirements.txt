@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+# fredapi 0.5.2 iki yildir guncellenmedi (PyPI son yayin: 2024-05-05).
+# Sabitlendi: sessiz bir surum atlamasi, fred_client.py basindaki
+# socket zaman asimi korumasinin dayandigi davranisi degistirebilir.
+fredapi==0.5.2
+pandas
+httpx
+redis

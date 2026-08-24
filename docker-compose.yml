@@ -427,6 +427,43 @@ services:
     ports:
       - "127.0.0.1:8230:8000"
 
+  # 24.08.2026 — 9. piyasa sinyali: makro yayin takvimi + gostergeler.
+  # liquidity-signal (8230) ile KESISIM YOK: o servis Fed bilanco/likidite
+  # serilerini (WALCL/TGA/RRP/M2) okur ve lambda=0'da durur; bu servis
+  # takvim + getiri egrisi/cekirdek PCE/istihdam/basvuru/guven/dolar okur.
+  fred-macro:
+    build: ./fred-macro-service
+    container_name: alphawise-fred-macro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
+    env_file: ./fred-macro-service/.env
+    ports:
+      - "127.0.0.1:8270:8000"
+
+  # 24.08.2026 — 10. piyasa sinyali: sirket takvimi + haber yogunlugu.
+  # Finnhub ucretsiz katman limiti CANLI OLCULDU: anahtar basina 60 istek/dk
+  # (x-ratelimit-limit basligi). Ayni anahtar havuzunu dort servis daha
+  # kullaniyor, bu yuzden servis kendi payini Redis sayaciyla sinirlar
+  # (FINNHUB_DAKIKALIK_BUTCE, varsayilan 15).
+  finnhub-signal:
+    build: ./finnhub-signal-service
+    container_name: alphawise-finnhub-signal
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
+    env_file: ./finnhub-signal-service/.env
+    ports:
+      - "127.0.0.1:8280:8000"
+
   sec-edgar-13f:
     build: ./sec-edgar-13f-service
     container_name: alphawise-sec-edgar-13f

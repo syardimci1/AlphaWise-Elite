@@ -483,8 +483,14 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
   // DOKUNMAZ (ayni servisteki /gex ucu ucretsiz planda kapali ve basarisiz
   // cagri bile kotadan dusuyordu — bu kart o tuzaga girmez).
   const opsiyon = useSinyal(t ? `/api/dex-vanna/${t}` : null)
+  // 24.08.2026 — 10. sinyal: sirket takvimi + haber yogunlugu (Finnhub).
+  // Ucretsiz katman OLCULDU: anahtar basina 60 istek/dk, havuz paylasimli.
+  const sirketTakvimi = useSinyal(t ? `/api/finnhub-signal/${t}` : null)
   // Likidite hisseye bagli degil; ticker olmasa da her zaman cekilir.
   const likidite = useSinyal('/api/liquidity-signal')
+  // 24.08.2026 — 9. sinyal: makro yayin takvimi + gostergeler (FRED).
+  // Hisseye bagli DEGIL — likidite karti gibi her zaman cekilir.
+  const makro = useSinyal('/api/fred-macro')
 
   return (
     <div style={{ marginTop: 32, background: '#1e293b', padding: 20, borderRadius: 12, border: '1px solid #334155' }}>
@@ -678,6 +684,114 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
           )}
         </SinyalKutusu>
       )}
+
+      {/* ---------- SIRKET TAKVIMI VE HABER YOGUNLUGU (Finnhub) ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Sirket Takvimi ve Haber Yogunlugu"
+          aciklama="Yaklasan bilanco tarihi, son 7 gunun haber adedi ve ucuncu taraf basliklar."
+          rozet="gozlem — kalibre edilmemis"
+          rozetRenk="#fbbf24"
+          durum={sirketTakvimi.durum}
+          hata={sirketTakvimi.hata}
+          uyari="Basliklar Finnhub'dan GELDIGI GIBI aktarilir; AlphaWise'in degerlendirmesi degildir ve duygu analizi uygulanmamistir. Ucretsiz katmanda gecmis fiyat serisi bulunmadigi icin yalnizca anlik fiyat gorunumu tasinir. Bu gostergelerin ongoru gucu bu sistemde KALIBRE EDILMEMISTIR ve karar koduna baglanmaz."
+        >
+          {sirketTakvimi.veri && (
+            <>
+              <Satir
+                etiket="Yaklasan bilanco"
+                deger={
+                  sirketTakvimi.veri.bilanco_takvimi?.yaklasan_var
+                    ? `${sirketTakvimi.veri.bilanco_takvimi.tarih} (${sirketTakvimi.veri.bilanco_takvimi.kalan_gun} gun)`
+                    : `${sirketTakvimi.veri.bilanco_takvimi?.pencere_gun ?? '—'} gun icinde yok`
+                }
+              />
+              <Satir
+                etiket="EPS beklentisi"
+                deger={sirketTakvimi.veri.bilanco_takvimi?.eps_beklentisi ?? '—'}
+              />
+              <Satir
+                etiket="Haber adedi (7 gun)"
+                deger={sayiBicimle(sirketTakvimi.veri.haber?.toplam_adet)}
+              />
+              <Satir
+                etiket="Anlik fiyat"
+                deger={
+                  sirketTakvimi.veri.anlik_fiyat?.veri_var
+                    ? `$${sayiBicimle(sirketTakvimi.veri.anlik_fiyat.son, 2)} (%${sayiBicimle(sirketTakvimi.veri.anlik_fiyat.degisim_yuzde, 2)})`
+                    : '—'
+                }
+              />
+              <Satir
+                etiket="52 haftalik aralik"
+                deger={`${sayiBicimle(sirketTakvimi.veri.temel_metrikler?.yil_dibi, 2)} - ${sayiBicimle(sirketTakvimi.veri.temel_metrikler?.yil_zirvesi, 2)}`}
+              />
+              {sirketTakvimi.veri.haber?.secili_basliklar?.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ color: '#64748b', fontSize: 11, margin: '0 0 6px' }}>
+                    Son basliklar (ucuncu taraf, degerlendirilmemis):
+                  </p>
+                  {sirketTakvimi.veri.haber.secili_basliklar.map((h: any, i: number) => (
+                    <p key={i} style={{ color: '#94a3b8', fontSize: 11, margin: '0 0 4px', lineHeight: 1.4 }}>
+                      • {h.baslik} <span style={{ color: '#64748b' }}>({h.kaynak})</span>
+                    </p>
+                  ))}
+                </div>
+              )}
+              <p style={{ color: '#64748b', fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+                Kaynak: {sirketTakvimi.veri.kaynak || '—'}
+                {sirketTakvimi.veri.kota
+                  ? ` · Dakikalik pay: ${sirketTakvimi.veri.kota.bu_dakika_kullanilan}/${sirketTakvimi.veri.kota.bu_servisin_butcesi}`
+                  : ''}
+              </p>
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+      {/* ---------- MAKRO YAYIN TAKVIMI VE GOSTERGELER (FRED) ---------- */}
+      <SinyalKutusu
+        baslik="Makro Yayin Takvimi ve Gostergeler"
+        aciklama="Yaklasan TUFE / istihdam / PCE / GSYH yayinlari ve sistemde olmayan makro gostergeler."
+        rozet="resmi veri — kalibre edilmemis"
+        rozetRenk="#fbbf24"
+        durum={makro.durum}
+        hata={makro.hata}
+        uyari="Bu kart Fed Likidite Rejimi kartindan FARKLI bir veri kumesi tasir: orada Fed bilanco/likidite serileri (WALCL/TGA/RRP/M2) var, burada yayin takvimi ve getiri egrisi / cekirdek PCE / istihdam / basvurular / guven / dolar endeksi var; seri kesisimi yoktur. Takvim tarihleri FRED'in resmi programindan gelir ve yayin kurumlarinca degistirilebilir. Gostergelerin ongoru gucu bu sistemde KALIBRE EDILMEMISTIR ve karar koduna baglanmaz."
+      >
+        {makro.veri && (
+          <>
+            {(makro.veri.takvim?.yaklasan || []).slice(0, 4).map((y: any, i: number) => (
+              <Satir
+                key={i}
+                etiket={y.yayin_adi}
+                deger={`${y.tarih}${y.kalan_gun === 0 ? ' (bugun)' : ` (${y.kalan_gun} gun)`}`}
+              />
+            ))}
+            {(makro.veri.takvim?.adet ?? 0) === 0 && (
+              <Satir etiket="Yaklasan yayin" deger="pencerede yok" />
+            )}
+            <div style={{ height: 8 }} />
+            {(makro.veri.gostergeler || [])
+              .filter((g: any) => g.veri_var)
+              .map((g: any, i: number) => (
+                <Satir
+                  key={i}
+                  etiket={g.ad}
+                  deger={`${sayiBicimle(g.son_deger, 2)}${
+                    g.yillik_degisim_yuzde !== null && g.yillik_degisim_yuzde !== undefined
+                      ? ` (yillik %${sayiBicimle(g.yillik_degisim_yuzde, 1)})`
+                      : ''
+                  }`}
+                />
+              ))}
+            <p style={{ color: '#64748b', fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+              Gosterge tamligi: {makro.veri.gosterge_tamlik || '—'} · Kaynak: {makro.veri.kaynak || '—'}
+              {makro.veri.takvim_hatasi ? ' · takvim su an alinamadi' : ''}
+            </p>
+          </>
+        )}
+      </SinyalKutusu>
 
       {/* ---------- CONGRESS TRADING ---------- */}
       {t && (

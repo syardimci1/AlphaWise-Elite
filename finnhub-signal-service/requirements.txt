@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+# finnhub-python 2.4.29 (2026-06-24). Tek bagimliligi requests>=2.22.0.
+# Sabitlendi: kutuphanede hicbir retry/backoff yok ve 429 dogrudan
+# FinnhubAPIException olarak geliyor; bu davranisa gore kod yazildi.
+finnhub-python==2.4.29
+redis
