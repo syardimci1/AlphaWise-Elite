@@ -2,3 +2,7 @@ fastapi
 uvicorn
 transformers
 torch
+# Dogrudan import edilir (src/main.py: snapshot_download ile surum sabitleme +
+# sha256 butunluk dogrulamasi). Onceden yalnizca transformers'in dolayli
+# bagimliligiydi; artik acik bagimlilik oldugu icin listelenir.
+huggingface_hub
