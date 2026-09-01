@@ -145,7 +145,7 @@ Sistem pozisyon büyüklüğü veya süresi konusunda talimat vermez.
 
 | Kaynak | URL / Repo | Lisans | Kapsam |
 |---|---|---|---|
-| FinBERT | github.com/ProsusAI/finbert | Apache-2.0 | İngilizce ABD haber sentiment (-1/+1) |
+| FinBERT | github.com/ProsusAI/finbert | Apache-2.0 (yalnızca kod deposu — kullandığımız ağırlıkların lisansı beyan edilmemiş, bkz. finbert-service/README.md) | İngilizce ABD haber sentiment (-1/+1) |
 | FinGPT-TR (fine-tune) | HuggingFace hub | Apache-2.0 | Türkçe finansal metin sentiment (BIST) |
 | BERTurk-Finance | HuggingFace hub | Apache-2.0 | BIST özelleşmiş Türkçe finansal model |
 | Finnhub | finnhub.io | Freemium | ABD: Anlık haberler, earnings calendar |
