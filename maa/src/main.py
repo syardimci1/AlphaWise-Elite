@@ -506,7 +506,7 @@ def score_raa(data):
 def score_saa(data):
     if not data or "error" in data:
         return None
-    sentiment = data.get("overall_sentiment")
+    sentiment = data.get("overall")
     if sentiment == "positive":
         return 1
     elif sentiment == "negative":
