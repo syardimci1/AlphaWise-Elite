@@ -529,6 +529,20 @@ async def gather_agent_data(ticker: str):
                     resp = await client.get(f"{url}/analyze/{ticker}", params={"max_news": 5})
                 else:
                     resp = await client.get(f"{url}/analyze/{ticker}")
+                # HTTP DURUMU DENETLENIR - OLCULEN KARAR-BUTUNLUGU HATASI
+                # (01.09.2026 supheci turu). Eskiden durum kodu HIC
+                # bakilmadan resp.json() donuyordu. Bir ajan 4xx/5xx
+                # dondurdugunde govde {"detail": "..."} olur; icinde "error"
+                # anahtari YOKTUR, bu yuzden score_* fonksiyonlari None
+                # yerine 0 uretir ve ARIZALI katman "olculmus notr" gibi
+                # karar skoruna girer. Olculdu: SAA 500/422/404 -> hepsinde
+                # score_saa = 0 (None DEGIL).
+                # raise_for_status() bir HTTPStatusError firlatir ve zaten
+                # var olan asagidaki except dali onu {"error": ...} yapar -
+                # yani ariza, score_* fonksiyonlarinin ZATEN dogru isledigi
+                # bicimde bildirilir. Bu tek satir dort katmani da (taa/faa/
+                # raa/saa) ayni anda korur.
+                resp.raise_for_status()
                 return name, resp.json()
             except Exception as e:
                 return name, {"error": str(e)}

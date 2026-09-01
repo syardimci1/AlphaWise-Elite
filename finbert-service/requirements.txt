@@ -1,8 +1,32 @@
-fastapi
-uvicorn
-transformers
-torch
+# TUM SURUMLER SABITLENMISTIR (01.09.2026).
+#
+# NEDEN: onceden hicbiri pinli degildi ve olculen bir surum kaymasi yasandi:
+# uretim konteyneri transformers 5.15.0 ile calisirken, ayni Dockerfile'dan
+# yeniden derlenen imaj 5.16.1 getirdi. Model surumu src/main.py'de sha256
+# ile sabitlenmisken, o modeli YUKLEYEN kodun her build'de degismesi
+# sabitlemeyi anlamsizlastirir: yukleyici degisirse davranis da degisebilir.
+#
+# Ozellikle kritik olanlar (model davranisini dogrudan etkiler):
+#   transformers    - etiket sirasi, pipeline davranisi, weights_only
+#                     varsayilani (pickle guvenligi buna bagli)
+#   torch           - deserializasyon ve sayisal davranis
+#   tokenizer/safetensors/huggingface_hub - girdi kodlama ve dosya yukleme
+#
+# Degerler UYDURULMADI: 01.09.2026'da uretimde calisan ve 10 cumlelik
+# referans sette 8/10 veren konteynerden `pip freeze` ile alindi.
+# Yukseltme, ayni referans test yeniden kosulup sonuc dogrulanarak yapilir.
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+
+# Model yukleme yigini
+transformers==5.16.1
+torch==2.13.0
+tokenizers==0.23.1
+safetensors==0.8.0
+numpy==2.5.2
+
 # Dogrudan import edilir (src/main.py: snapshot_download ile surum sabitleme +
 # sha256 butunluk dogrulamasi). Onceden yalnizca transformers'in dolayli
 # bagimliligiydi; artik acik bagimlilik oldugu icin listelenir.
-huggingface_hub
+huggingface_hub==1.29.0
