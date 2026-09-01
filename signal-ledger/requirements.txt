@@ -1,5 +1,7 @@
 fastapi==0.139.2
 uvicorn==0.51.0
-httpx
+# httpx SABITLENDI (01.09.2026): dosyadaki tek sabitsiz bagimlilikti.
+# Deger uydurulmadi - calisan konteynerde kurulu olan surum okundu.
+httpx==0.28.1
 psycopg2-binary==2.9.12
 python-dotenv==1.2.2

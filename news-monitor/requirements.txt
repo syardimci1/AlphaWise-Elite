@@ -1,5 +1,23 @@
-fastapi
-uvicorn
-websocket-client
-httpx
-python-dotenv
+# SURUMLER SABITLENDI (01.09.2026).
+#
+# NEDEN: bu dosyadaki bes bagimliligin BESI DE sabitsizdi. Dockerfile
+# `pip install -r requirements.txt` calistirdigi icin her imaj yapiminda
+# o anki EN GUNCEL surum geliyordu; iki farkli tarihte yapilan iki imaj
+# farkli kutuphane surumleri tasiyabilirdi ve bu fark hicbir yerde
+# gorunmuyordu.
+#
+# Bunun bu serviste ozellikle onemli olmasinin nedeni: news-monitor
+# FinBERT'i DOGRUDAN cagirir (src/main.py:89) ve duygu etiketini uretim
+# akisina verir. httpx'in davranis degisikligi (zaman asimi, yeniden
+# deneme, baglanti havuzu) duygu verisinin sessizce eksik kalmasina yol
+# acabilir - aynen finbert-service'te olculen transformers 5.15.0 ->
+# 5.16.1 kaymasinda oldugu gibi.
+#
+# Degerler UYDURULMADI: su an calisan konteynerde kurulu olan surumler
+# `pip list --format=freeze` ile okundu ve birebir yazildi. Yani bu
+# sabitleme mevcut davranisi DEGISTIRMEZ, yalnizca DONDURUR.
+fastapi==0.141.1
+uvicorn==0.52.3
+websocket-client==1.9.0
+httpx==0.28.1
+python-dotenv==1.2.2
