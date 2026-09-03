@@ -563,9 +563,9 @@ async def gather_agent_data(ticker: str):
 
 SCORE_MEANINGS = {
     "EKLE": "Skor 4 ve uzeri: Coklu katmanlarda (Teknik/Temel/Risk/Duygu) guclu pozitif konfluans.",
-    "TUT": "Skor -3 ile 3 arasi: Karisik veya notr sinyaller, net bir yon yok.",
+    "TUT": "Skor -2 ile 3 arasi: Karisik veya notr sinyaller, net bir yon yok.",
     "DIKKAT ET": "Skor -3 ve altinda: Coklu katmanlarda negatif sinyal birikimi, risk artmis.",
-    "BEKLE": "4 katmandan (TAA/FAA/RAA/SAA) 3'ten azi yanit verdi, Confluence over Confidence prensibi geregi karar verilemiyor.",
+    "BEKLE": "5 katmandan (TAA/FAA/RAA/SAA/Chronos) 3'ten azi yanit verdi, Confluence over Confidence prensibi geregi karar verilemiyor.",
 }
 
 
