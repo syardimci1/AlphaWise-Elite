@@ -42,6 +42,31 @@ def next_tiingo_key(keys):
     return key
 
 
+def bar_butunlugu_gecerli(row: dict) -> bool:
+    """Bar ici tutarlilik: high tum fiyatlarin ustunde, low altinda olmali.
+
+    04.09.2026 DUZELTME: qlib'in merkezi deposunda (bu servisin de okudugu
+    ayni CSV'ler) 4.649 imkansiz bar bulundu (high < max(open,close) veya
+    low > min(open,close)) - kok neden donmus on-yayin barlar, bkz.
+    data-fetcher/scripts/incremental_update.py. Kaynaktaki dosyalar
+    yeniden yazilarak onarildi, ancak (a) bazi barlar sadece saglayicinin
+    kendi bozuk verisi oldugu icin onarilmadan kaldi, (b) TAA'nin protected
+    taa/src/main.py dosyasina bu kontrol EKLENEMEZ. Bu yuzden ayni kural,
+    /price'in OKUMA yolunda tekrarlanir: TAA'nin formasyon modulu
+    (ust_golge = High - max(Open,Close)) bu tur barlarda negatif golge
+    uretiyor ve ATR'yi bozuyor - imkansiz bar, eksik bardan daha kotudur.
+    Kural incremental_update.py'deki bar_butunlugu_gecerli() ile AYNIDIR.
+    """
+    try:
+        o, h, l, c = (float(row["open"]), float(row["high"]),
+                      float(row["low"]), float(row["close"]))
+    except (KeyError, TypeError, ValueError):
+        return False
+    if any(x != x for x in (o, h, l, c)):  # NaN
+        return False
+    return h >= max(o, c) and l <= min(o, c) and h >= l
+
+
 def read_central_csv(ticker: str, limit: int = 60):
     """Once merkezi depoyu (Qlib'in topladigi veri) dener - hizli, API cagrisi yok."""
     path = f"{CENTRAL_DATA_DIR}/{ticker.upper()}.csv"
@@ -49,6 +74,9 @@ def read_central_csv(ticker: str, limit: int = 60):
         return None
     with open(path) as f:
         rows = list(csv.DictReader(f))
+    if not rows:
+        return None
+    rows = [r for r in rows if bar_butunlugu_gecerli(r)]
     if not rows:
         return None
     return rows[-limit:]
