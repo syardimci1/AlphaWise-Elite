@@ -11,7 +11,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from .sentez import sentezle, EKSEN_TANIMLARI, ASGARI_EKSEN
-from . import veri
+from .karsilastirma import sektor_karsilastir, ASGARI_RAKIP
+from . import veri, onbellek
 
 # Anayasa Madde 1.4 geregi her cikti bu uyariyi tasir. Metin, servis
 # bagimsizligi icin burada da tutulur; maa/src/constitution.py ile
@@ -35,6 +36,36 @@ def health():
             "eksen_sayisi": len(EKSEN_TANIMLARI), "asgari_eksen": ASGARI_EKSEN}
 
 
+def _skor_hesapla(ticker: str, onbellek_kullan: bool = True):
+    """Tek sirketin bes eksenini uretir. Sonuc onbellege yazilir; onbellek
+    ayni zamanda sektor indeksini besler (bkz. onbellek.py)."""
+    if onbellek_kullan:
+        hazir = onbellek.oku(ticker)
+        if hazir is not None:
+            return {**hazir, "onbellekten": True}
+    try:
+        import yfinance as yf
+    except ImportError:
+        return {"ticker": ticker.upper(), "hata": "veri kutuphanesi yuklenemedi"}
+    try:
+        sirket = veri.sirket_getir(yf, ticker)
+    except Exception as e:
+        return {"ticker": ticker.upper(),
+                "hata": f"mali tablo alinamadi: {type(e).__name__}"}
+    if not sirket.donemler:
+        return {"ticker": ticker.upper(),
+                "hata": "Bu sembol icin mali tablo bulunamadi"}
+    rf = veri.risksiz_faiz_getir(yf)
+    sonuc = sentezle(sirket, risksiz_faiz=rf)
+    sonuc["sirket_adi"] = sirket.piyasa.get("sirket_adi")
+    sonuc["sektor"] = sirket.piyasa.get("sektor")
+    sonuc["donem_sayisi"] = len(sirket.donemler)
+    sonuc["risksiz_faiz"] = rf
+    sonuc["veri_kaynagi"] = "yfinance (ucretsiz)"
+    onbellek.yaz(ticker, sonuc)
+    return {**sonuc, "onbellekten": False}
+
+
 @app.get("/eksenler")
 def eksenler():
     """Eksen tanimlari — hangi eksen hangi yayimlanmis olcute dayaniyor."""
@@ -43,33 +74,69 @@ def eksenler():
 
 
 @app.get("/skor/{ticker}")
-def skor(ticker: str):
-    try:
-        import yfinance as yf
-    except ImportError:
-        return JSONResponse(status_code=503,
-                            content={"ticker": ticker.upper(),
-                                     "hata": "veri kutuphanesi yuklenemedi"})
-    try:
-        sirket = veri.sirket_getir(yf, ticker)
-    except Exception as e:
-        return JSONResponse(status_code=502, content={
-            "ticker": ticker.upper(),
-            "hata": f"mali tablo alinamadi: {type(e).__name__}",
-            "yasal_uyari": YASAL_UYARI})
+def skor(ticker: str, taze: bool = False):
+    sonuc = _skor_hesapla(ticker, onbellek_kullan=not taze)
+    if "hata" in sonuc:
+        kod = 404 if "bulunamadi" in sonuc["hata"] else 502
+        return JSONResponse(status_code=kod,
+                            content={**sonuc, "yasal_uyari": YASAL_UYARI})
+    return {**sonuc, "yasal_uyari": YASAL_UYARI}
 
-    if not sirket.donemler:
-        return JSONResponse(status_code=404, content={
-            "ticker": ticker.upper(),
-            "hata": "Bu sembol icin mali tablo bulunamadi",
-            "yasal_uyari": YASAL_UYARI})
 
-    rf = veri.risksiz_faiz_getir(yf)
-    sonuc = sentezle(sirket, risksiz_faiz=rf)
-    sonuc["sirket_adi"] = sirket.piyasa.get("sirket_adi")
-    sonuc["sektor"] = sirket.piyasa.get("sektor")
-    sonuc["donem_sayisi"] = len(sirket.donemler)
-    sonuc["risksiz_faiz"] = rf
-    sonuc["veri_kaynagi"] = "yfinance (ucretsiz)"
-    sonuc["yasal_uyari"] = YASAL_UYARI
-    return sonuc
+@app.get("/sektor-indeksi")
+def sektor_indeksi():
+    """Onbellekte GERCEKTEN bulunan sirketlerin sektor dagilimi.
+
+    Indeks kendiliginden buyur: her /skor cagrisi bir sirketi ekler. Sistemde
+    hazir bir sektor evreni olmadigi icin (olculdu: hicbir serviste sektor
+    alani yok) rakip listesi UYDURULMAZ; indekste ne varsa o soylenir.
+    """
+    i = onbellek.sektor_indeksi()
+    return {"sektorler": i,
+            "toplam_sirket": sum(len(v) for v in i.values()),
+            "asgari_rakip": ASGARI_RAKIP,
+            "not": "Indeks yalnizca daha once /skor ile sorulmus sirketleri "
+                   "icerir; eksik olmasi bir hata degil, bilinen sinirdir."}
+
+
+@app.get("/karsilastir/{ticker}")
+def karsilastir(ticker: str, rakipler: str = ""):
+    """Sektor-normalize rakip karsilastirmasi (Madde 24).
+
+    rakipler verilmezse sektor indeksinden secilir. Yeterli rakip yoksa
+    sonuc URETILMEZ; kac rakip bulundugu ve neyin gerektigi soylenir.
+    """
+    hedef = _skor_hesapla(ticker)
+    if "hata" in hedef:
+        return JSONResponse(status_code=502,
+                            content={**hedef, "yasal_uyari": YASAL_UYARI})
+
+    istenen = [p.strip().upper() for p in rakipler.split(",") if p.strip()]
+    kaynak = "acikca verildi"
+    if not istenen:
+        istenen = onbellek.sektordeki_rakipler(ticker, hedef.get("sektor"))
+        kaynak = "sektor indeksi (onbellek)"
+
+    if len(istenen) < ASGARI_RAKIP:
+        return {
+            "ticker": ticker.upper(), "sektor": hedef.get("sektor"),
+            "hedef": hedef, "rakipler": istenen, "rakip_kaynagi": kaynak,
+            "karsilastirma": None,
+            "gerekce": (f"Yeterli rakip yok: {len(istenen)} sirket bulundu, "
+                        f"en az {ASGARI_RAKIP} gerekiyor. Rakipleri acikca "
+                        f"vermek icin ?rakipler=AAA,BBB,CCC kullanin."),
+            "yasal_uyari": YASAL_UYARI,
+        }
+
+    rakip_skorlari = []
+    for r in istenen:
+        s = _skor_hesapla(r)
+        if "hata" not in s:
+            rakip_skorlari.append(s)
+
+    k = sektor_karsilastir(hedef, rakip_skorlari)
+    return {"ticker": ticker.upper(), "sektor": hedef.get("sektor"),
+            "hedef": hedef, "rakip_kaynagi": kaynak,
+            "istenen_rakip": len(istenen),
+            "skoru_alinabilen_rakip": len(rakip_skorlari),
+            "karsilastirma": k, "yasal_uyari": YASAL_UYARI}

@@ -532,8 +532,18 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    # Skor onbellegi (Madde 24). Tek bir sirketin bes ekseni 20-40 saniye
+    # suruyor; rakip karsilastirmasi 5-10 sirket demek. Onbellek olmadan her
+    # istek dakikalarca surer ve Yahoo gereksiz yorulurdu. Mali tablolar uc
+    # ayda bir degistigi icin 24 saatlik yasam suresi fazlasiyla guvenli.
+    # Ayni dizin, kendiliginden buyuyen sektor indeksinin de kaynagidir.
+    volumes:
+      - skor_sentezi_onbellek:/app/onbellek
     ports:
       - "127.0.0.1:8330:8000"
+
+volumes:
+  skor_sentezi_onbellek:
 
 networks:
   default:
