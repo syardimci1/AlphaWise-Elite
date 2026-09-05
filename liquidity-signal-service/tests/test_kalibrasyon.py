@@ -197,11 +197,13 @@ def test_lambda_ancak_gecen_spek_varsa_artabilir():
 def test_kalibrasyon_yeniden_uretim_yolu_var():
     """Iddia eden her sayinin ureten betigi belgede olmali."""
     assert "calibration/kalibre.py" in KALIBRASYON["yeniden_uret"]
-    import os
-    yol = os.path.join(
-        "/opt/alphawise/commercial/AlphaWise-Elite/liquidity-signal-service",
-        "calibration", "kalibre.py")
-    assert os.path.exists(yol), "kalibrasyon betigi depoda yok"
+    # Yol, SABIT host yolundan degil TEST DOSYASINA GORE cozulur: test hem
+    # host'ta hem de deponun /app'e baglandigi konteynerde kosabilmeli.
+    # (Sabit "/opt/alphawise/..." yolu konteynerde yoktu ve test, betik
+    # depoda DURUYORKEN "kalibrasyon betigi depoda yok" diye kiriliyordu.)
+    from pathlib import Path
+    yol = Path(__file__).resolve().parents[1] / "calibration" / "kalibre.py"
+    assert yol.exists(), f"kalibrasyon betigi depoda yok: {yol}"
 
 
 def test_elenen_alternatifler_belgelenmis():

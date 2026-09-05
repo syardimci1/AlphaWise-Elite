@@ -51,7 +51,7 @@ def test_bar_butunlugu_gecerli():
         ok = sonuc == beklenen
         tum_ok &= ok
         print(f"  [{'OK' if ok else 'FAIL'}] {etiket}: gecerli={sonuc} (beklenen: {beklenen})")
-    return tum_ok
+    assert tum_ok, "bar_butunlugu_gecerli() en az bir vakada beklenen sonucu vermedi"
 
 
 def test_read_central_csv_imkansiz_bari_filtreler():
@@ -73,7 +73,8 @@ def test_read_central_csv_imkansiz_bari_filtreler():
         print(f"  donen bar sayisi: {len(rows)} (beklenen: 2, kaynakta 3 satir vardi)")
         print(f"  tarihler: {tarihler}")
         print(f"  imkansiz bar disarida mi: {imkansiz_disarida} (beklenen: True)")
-        return n_ok and imkansiz_disarida
+        assert n_ok, f"2 bar beklenirken {len(rows)} dondu"
+        assert imkansiz_disarida, "imkansiz bar okuma yolundan SIZDI"
 
 
 def test_read_central_csv_hepsi_imkansizsa_bos_doner():
@@ -89,13 +90,25 @@ def test_read_central_csv_hepsi_imkansizsa_bos_doner():
         sonuc = market_data.read_central_csv("TEST2", limit=60)
         ok = sonuc is None
         print(f"  sonuc: {sonuc} (beklenen: None)")
-        return ok
+        assert ok, f"tumu imkansizken None beklenirken {sonuc} dondu"
 
 
-sonuclar = [
-    test_bar_butunlugu_gecerli(),
-    test_read_central_csv_imkansiz_bari_filtreler(),
-    test_read_central_csv_hepsi_imkansizsa_bos_doner(),
-]
-print("\nTEST: " + ("PASS" if all(sonuclar) else "FAIL"))
-raise SystemExit(0 if all(sonuclar) else 1)
+# Bu blok MODUL SEVIYESINDE calisiyordu; pytest dosyayi import ettigi anda
+# SystemExit yukseliyor ve TUM oturum INTERNALERROR ile dusuyordu. Artik
+# yalnizca dogrudan calistirildiginda (python3 test_bar_butunlugu.py)
+# kosuyor; pytest ise ayni fonksiyonlari normal test olarak topluyor.
+# Fonksiyonlar bool DONDURMEK yerine assert ediyor (pytest-yerlisi); betik
+# modunda ayni PASS/FAIL ozeti AssertionError yakalanarak korunuyor.
+if __name__ == "__main__":
+    sonuclar = []
+    for _t in (test_bar_butunlugu_gecerli,
+               test_read_central_csv_imkansiz_bari_filtreler,
+               test_read_central_csv_hepsi_imkansizsa_bos_doner):
+        try:
+            _t()
+            sonuclar.append(True)
+        except AssertionError as _e:
+            print(f"  [FAIL] {_t.__name__}: {_e}")
+            sonuclar.append(False)
+    print("\nTEST: " + ("PASS" if all(sonuclar) else "FAIL"))
+    raise SystemExit(0 if all(sonuclar) else 1)
