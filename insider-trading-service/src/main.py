@@ -28,6 +28,7 @@ import redis
 from fastapi import FastAPI, HTTPException
 
 from .lambda_sifir import LAMBDA, LambdaSifirIhlali, dogrula
+from .istatistik import yeterlilik, ASGARI_PENCERE_OLAY
 
 OPENBB_URL = os.getenv("OPENBB_URL", "http://openbb:8000")
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -328,3 +329,83 @@ def insider_ozet(ticker: str):
         "kalibrasyon_gecerli": False,
     }
     return dogrula(yanit)
+
+@app.get("/insider/{ticker}/yon")
+def insider_yon(ticker: str, gun: int = 90):
+    """Acik piyasa alim/satim yon ayrimi + ISTATISTIKSEL YETERLILIK (Madde 25).
+
+    /ozet ucu alim ve satim sayilarini zaten bildiriyordu ve "yon cikarimi
+    yapilamaz" diyordu; ama bunu OLCMUYORDU. Cumle bir YARGIYDI, sayi degil.
+    Bu uc, gozlenen farkin sansla aciklanip aciklanamadigini HESAPLAR.
+
+    Karsilastirma "alim ve satim esit olasilikli" varsayimina DAYANMAZ (bu
+    evrende yanlis olurdu; acik piyasa alimi cok nadir). Bunun yerine pencere,
+    SIRKETIN KENDI GECMISININ GERI KALANIYLA karsilastirilir.
+
+    Birincil olcum birimi KISIDIR: ayni yoneticinin bes islemi bes bagimsiz
+    isaret degildir. Islem duzeyi ikincil olarak ayrica bildirilir.
+    """
+    ticker = _ticker_dogrula(ticker)
+    if gun < 7 or gun > 3650:
+        return {"ticker": ticker, "hata": "gun 7 ile 3650 arasinda olmali"}
+    ham, isabet = _ham_getir(ticker, limit=200)
+    kayitlar = [_normalize(k) for k in ham]
+    acik = [k for k in kayitlar if k["acik_piyasa"] and k["islem_tarihi"]]
+
+    esik = (dt.date.today() - dt.timedelta(days=gun)).isoformat()
+    pencere = [k for k in acik if k["islem_tarihi"] >= esik]
+    gecmis = [k for k in acik if k["islem_tarihi"] < esik]
+
+    def kisi_sayimi(dilim, yon):
+        return len({k["kisi"] for k in dilim
+                    if k["acik_piyasa_yonu"] == yon and k["kisi"]})
+
+    def islem_sayimi(dilim, yon):
+        return sum(1 for k in dilim if k["acik_piyasa_yonu"] == yon)
+
+    kisi = yeterlilik(kisi_sayimi(pencere, "alim"), kisi_sayimi(pencere, "satis"),
+                      kisi_sayimi(gecmis, "alim"), kisi_sayimi(gecmis, "satis"))
+    islem = yeterlilik(islem_sayimi(pencere, "alim"), islem_sayimi(pencere, "satis"),
+                       islem_sayimi(gecmis, "alim"), islem_sayimi(gecmis, "satis"))
+
+    tarihler = sorted(k["islem_tarihi"] for k in acik)
+    if tarihler:
+        try:
+            kapsam_gun = (dt.date.fromisoformat(tarihler[-1])
+                          - dt.date.fromisoformat(tarihler[0])).days
+        except ValueError:
+            kapsam_gun = None
+    else:
+        kapsam_gun = None
+
+    yanit = {
+        "ticker": ticker,
+        "onbellekten": isabet,
+        "pencere_gun": gun,
+        "toplam_acik_piyasa_kaydi": len(acik),
+        # Veri araligini GIZLEMEK yerine bildiriyoruz: "yetersiz veri"
+        # yanitinin nedeni cogu zaman burada gorulur.
+        "veri_araligi": {"en_eski": tarihler[0] if tarihler else None,
+                         "en_yeni": tarihler[-1] if tarihler else None,
+                         "kapsam_gun": kapsam_gun},
+        "kaynak_siniri": ("OLCULDU (06.09.2026): yukari akis kaynagi limit "
+                          "parametresinden BAGIMSIZ olarak yaklasik 3,7 aylik "
+                          "gecmis donduruyor (WDC icin limit=200/500/1000 "
+                          "denendi, ucunde de 257 kayit ve ayni tarih araligi). "
+                          "Bu nedenle pencere, kapsamin kabaca ucte birinden "
+                          "buyuk secilirse karsilastirma temeli olusmaz."),
+        "kisi_duzeyi": kisi,
+        "islem_duzeyi": islem,
+        "birincil_olcum": "kisi_duzeyi",
+        "yontem": ("Fisher kesin testi (iki yonlu). Pencere, sirketin kendi "
+                   "gecmisinin geri kalaniyla karsilastirilir; 'alim ve satim "
+                   "esit olasilikli' varsayimi KULLANILMAZ. Ki-kare yerine "
+                   "Fisher secildi cunku bu evrende hucre sayilari kucuktur "
+                   "ve ki-kare yaklasimi orada guvenilmezdir."),
+        "yon_kodu_uretir": False,
+        "not": ("Bu uc bir yon KODU uretmez. Yalnizca gozlenen farkin sansla "
+                "aciklanip aciklanamadigini soyler; 'ayirt ediliyor' sonucu "
+                "yonun gelecekte surecegi anlamina GELMEZ."),
+    }
+    return dogrula(yanit)
+
