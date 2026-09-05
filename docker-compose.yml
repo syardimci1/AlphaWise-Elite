@@ -542,6 +542,25 @@ services:
     ports:
       - "127.0.0.1:8330:8000"
 
+  # Kriz stres testi (Madde 26, 06.09.2026). Izole servis; mevcut hicbir
+  # servise dokunmaz. Karar kodu URETMEZ. Yerel qlib CSV'si SALT-OKUNUR
+  # baglanir: 2008 penceresi icin yfinance'in tam gecmisi gerekir, ama ag
+  # erisilemedigi zaman 2020 sonrasi yerel veriyle olcum surer.
+  stres-testi:
+    build: ./stres-testi-service
+    container_name: alphawise-stres-testi
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    volumes:
+      - ./qlib-service/csv_data_persistent/us_data:/veri/us_data:ro
+    ports:
+      - "127.0.0.1:8340:8000"
+
 volumes:
   skor_sentezi_onbellek:
 
