@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import PentagonSkor from '../../../components/PentagonSkor'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -860,6 +861,63 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
   )
 }
 
+// Bes eksenli temel skor karti (Madde 23).
+//
+// Skor servisi mali tablolari CANLI cekip Altman/Beneish/Piotroski/DCF
+// hesapladigi icin yanit ~20-40 saniye surebiliyor; bu yuzden ana arama
+// akisini BEKLETMEZ, kendi icinde ayri yuklenir. Ticker degistiginde
+// onceki sonuc HEMEN temizlenir: eski hissenin skorunu yeni hissenin
+// basligi altinda gostermek, sessiz ama ciddi bir yanlis bilgilendirme
+// olurdu.
+function TemelSkorKarti({ ticker }: { ticker: string }) {
+  const [veri, setVeri] = useState<any>(null)
+  const [yukleniyor, setYukleniyor] = useState(false)
+  const [hata, setHata] = useState('')
+
+  useEffect(() => {
+    if (!ticker) { setVeri(null); setHata(''); return }
+    let iptal = false
+    setVeri(null); setHata(''); setYukleniyor(true)
+    fetch(`/api/skor-sentezi/${ticker}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (iptal) return
+        if (d?.hata) setHata(d.hata)
+        else setVeri(d)
+      })
+      .catch((e) => { if (!iptal) setHata('Skor servisine ulasilamiyor: ' + e.message) })
+      .finally(() => { if (!iptal) setYukleniyor(false) })
+    return () => { iptal = true }
+  }, [ticker])
+
+  if (!ticker) return null
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h3 style={{ margin: '0 0 4px', color: '#e2e8f0' }}>Temel Skor Sentezi</h3>
+      <p style={{ color: '#64748b', fontSize: 12, margin: '0 0 12px' }}>
+        Dördü yayımlanmış akademik ölçüt (Altman Z, Beneish M, Piotroski F,
+        indirgenmiş nakit akışı), beşincisi AlphaWise bileşimi. Karar kodu
+        üretmez.
+      </p>
+      {yukleniyor && (
+        <p style={{ color: '#64748b', fontSize: 14 }}>
+          Mali tablolar çekiliyor ve beş eksen hesaplanıyor...
+        </p>
+      )}
+      {!yukleniyor && hata && (
+        <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: 16 }}>
+          <p style={{ color: '#f87171', fontSize: 13, margin: 0 }}>{hata}</p>
+        </div>
+      )}
+      {!yukleniyor && !hata && veri && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <PentagonSkor veri={veri} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [ticker, setTicker] = useState('')
   const [result, setResult] = useState<any>(null)
@@ -1070,6 +1128,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      <TemelSkorKarti ticker={aranmisTicker} />
       <PiyasaSinyalleri ticker={aranmisTicker} />
       <BistArastirmaMasasi />
       <RaporlarKarti />
