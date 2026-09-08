@@ -191,3 +191,132 @@ def test_bos_ve_temiz_ise_True_bos_ve_kirli_ise_False():
     kirli = ozet([{"kaynak": "a", "durum": "okundu", "olaylar": []},
                   {"kaynak": "b", "durum": "okunamadi", "olaylar": []}])
     assert kirli["sessiz_mi"] is True and kirli["guvenilir_sessizlik"] is False
+
+
+# ============ CANLI KULLANIMDA BULUNAN KUSUR: BAYAT ALARM ============
+from src.toplayici import bayatlik_isaretle, yas_gun
+
+
+def test_alarmdan_SONRA_gelen_normal_kayitlar_sayilir():
+    """01.09 tarihli 'MUTABAKAT ALARMI' listenin basinda duruyordu; oysa ayni
+    gun 20:10'dan itibaren her kontrol 'MUTABAKAT TAMAM' demis. Kullanici
+    bir hafta once kapanmis bir sorunu ACIK saniyordu."""
+    alarm = {"kaynak": "godmode_paper", "duzey": ALARM,
+             "zaman": "2026-09-01T20:06:25", "mesaj": "MUTABAKAT ALARMI"}
+    tum = [alarm,
+           {"kaynak": "godmode_paper", "duzey": BILGI, "zaman": "2026-09-01T20:10:58"},
+           {"kaynak": "godmode_paper", "duzey": BILGI, "zaman": "2026-09-08T16:02:25"},
+           {"kaynak": "baska_kaynak", "duzey": BILGI, "zaman": "2026-09-08T17:00:00"}]
+    bayatlik_isaretle([alarm], tum)
+    assert alarm["sonraki_normal_kayit"] == 2, "yalnizca AYNI kaynak sayilmali"
+
+
+def test_alarmdan_ONCEKI_normal_kayitlar_sayilmaz():
+    alarm = {"kaynak": "x", "duzey": ALARM, "zaman": "2026-09-05T10:00:00"}
+    tum = [alarm, {"kaynak": "x", "duzey": BILGI, "zaman": "2026-09-01T10:00:00"}]
+    bayatlik_isaretle([alarm], tum)
+    assert alarm["sonraki_normal_kayit"] == 0
+
+
+def test_alarm_SILINMEZ_yalnizca_isaretlenir():
+    """Otomatik 'cozuldu' karari vermek yanlis kapatma riski tasir."""
+    alarm = {"kaynak": "x", "duzey": ALARM, "zaman": "2026-09-01T10:00:00"}
+    tum = [alarm, {"kaynak": "x", "duzey": BILGI, "zaman": "2026-09-08T10:00:00"}]
+    sonuc = bayatlik_isaretle([alarm], tum)
+    assert len(sonuc) == 1 and sonuc[0] is alarm
+    assert sonuc[0]["duzey"] == ALARM, "duzey degistirilmemeli"
+
+
+def test_zamansiz_alarm_isaretlenemez_ama_ATILMAZ():
+    alarm = {"kaynak": "x", "duzey": ALARM, "zaman": None}
+    sonuc = bayatlik_isaretle([alarm], [alarm])
+    assert sonuc[0]["sonraki_normal_kayit"] is None
+    assert len(sonuc) == 1
+
+
+def test_yas_gun_hesabi():
+    assert yas_gun("2026-09-01T10:00:00", "2026-09-08T10:00:00") == 7
+    assert yas_gun("2026-09-08T09:00:00", "2026-09-08T10:00:00") == 0
+    assert yas_gun(None) is None
+    assert yas_gun("bozuk") is None
+
+
+# ============ GUNLUK DONDURULEN LOGLAR ============
+from src.toplayici import desen_oku
+
+
+def test_desen_okuma_birden_fazla_gunluk_dosyayi_BIRLESTIRIR(tmp_path):
+    """Kapanis kayitlari gunluk dondurulen ayri dosyalarda oldugu icin, tek
+    dosya okumak bayatlik hesabini yaniltiyordu."""
+    (tmp_path / "m_20260901.log").write_text(
+        "[2026-09-01 20:06:25] MUTABAKAT ALARMI: AYRISIK\n"
+        "[2026-09-01 20:10:58] MUTABAKAT TAMAM: defter=broker\n", encoding="utf-8")
+    (tmp_path / "m_20260908.log").write_text(
+        "[2026-09-08 16:02:25] MUTABAKAT TAMAM: defter=broker\n", encoding="utf-8")
+    s = desen_oku(tmp_path, "m_*.log", "paper", "metin", yalnizca_alarm=False)
+    assert s["durum"] == "okundu"
+    assert s["dosya_sayisi"] == 2
+    assert len(s["olaylar"]) == 3
+
+
+def test_desen_okuma_bayatligi_DOGRU_hesaplatir(tmp_path):
+    (tmp_path / "m_20260901.log").write_text(
+        "[2026-09-01 20:06:25] MUTABAKAT ALARMI: AYRISIK\n"
+        "[2026-09-01 20:10:58] MUTABAKAT TAMAM: defter=broker\n", encoding="utf-8")
+    (tmp_path / "m_20260908.log").write_text(
+        "[2026-09-08 16:02:25] MUTABAKAT TAMAM: defter=broker\n", encoding="utf-8")
+    s = desen_oku(tmp_path, "m_*.log", "paper", "metin", yalnizca_alarm=False)
+    alarmlar = [o for o in s["olaylar"] if o["duzey"] == ALARM]
+    bayatlik_isaretle(alarmlar, s["olaylar"])
+    assert alarmlar[0]["sonraki_normal_kayit"] == 2, (
+        "kapanis kayitlari sayilmaliydi; tek dosya okunsaydi 0 cikardi")
+
+
+def test_desene_uyan_dosya_yoksa_KAYNAK_YOK(tmp_path):
+    s = desen_oku(tmp_path, "hicyok_*.log", "x", "metin")
+    assert s["durum"] == "kaynak_yok" and s["olaylar"] == []
+
+
+def test_bir_dosya_okunamazsa_liste_EKSIK_olarak_isaretlenir(tmp_path):
+    (tmp_path / "a_1.log").write_text("[2026-09-01 10:00:00] ALARM: x\n", encoding="utf-8")
+    (tmp_path / "a_2.log").mkdir()   # dizin -> okunamaz
+    s = desen_oku(tmp_path, "a_*", "x", "metin")
+    assert s["durum"] == "kismen_okundu"
+    assert "EKSIK olabilir" in s["gerekce"]
+    assert len(s["olaylar"]) == 1, "okunabilen dosyanin olaylari KAYBOLMAMALI"
+
+
+def test_kismen_okundu_guvenilir_sessizligi_BOZAR():
+    o = ozet([{"kaynak": "x", "durum": "kismen_okundu", "olaylar": []}])
+    assert o["guvenilir_sessizlik"] is False
+    assert o["okunamayan_kaynak"] == 1
+
+
+from src.toplayici import tekille
+
+
+def test_ayni_olay_iki_kaynakta_varsa_TEK_kez_gosterilir():
+    """Mutabakat alarmi hem ALARM dosyasina hem gunluk dosyaya yaziliyor;
+    ikisi de okununca listede IKI KEZ goruldu (08.09.2026 canli olcum)."""
+    o = {"kaynak": "godmode_paper", "zaman": "2026-09-01T20:06:25",
+         "mesaj": "MUTABAKAT ALARMI: AYRISIK", "duzey": ALARM}
+    sonuc = tekille([dict(o), dict(o)])
+    assert len(sonuc) == 1
+
+
+def test_ayni_mesaj_FARKLI_zamanda_ayri_olaydir():
+    a = {"kaynak": "x", "zaman": "2026-09-01T10:00:00", "mesaj": "ALARM: y", "duzey": ALARM}
+    b = {**a, "zaman": "2026-09-02T10:00:00"}
+    assert len(tekille([a, b])) == 2
+
+
+def test_ayni_zaman_FARKLI_kaynak_ayri_olaydir():
+    a = {"kaynak": "x", "zaman": "2026-09-01T10:00:00", "mesaj": "ALARM: y", "duzey": ALARM}
+    b = {**a, "kaynak": "z"}
+    assert len(tekille([a, b])) == 2
+
+
+def test_tekillestirme_sirayi_KORUR():
+    a = {"kaynak": "x", "zaman": "2026-09-03T10:00:00", "mesaj": "a", "duzey": ALARM}
+    b = {"kaynak": "x", "zaman": "2026-09-01T10:00:00", "mesaj": "b", "duzey": ALARM}
+    assert [o["mesaj"] for o in tekille([a, b, dict(a)])] == ["a", "b"]

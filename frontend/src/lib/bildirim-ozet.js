@@ -63,3 +63,30 @@ export function kaynakEtiketi(durum) {
   if (durum === 'kaynak_yok') return { metin: 'kaynak yok', renk: '#94a3b8' }
   return { metin: 'OKUNAMADI', renk: DUZEY_RENK.alarm }
 }
+
+/**
+ * Bir alarmin GUNCEL mi yoksa gecmiste kapanmis mi oldugunu anlatan metin.
+ *
+ * NEDEN (canli kullanimda bulundu, 08.09.2026)
+ * --------------------------------------------
+ * Bildirim merkezi ilk calistiginda bir hafta once kapanmis bir mutabakat
+ * sorununu listenin basinda gosterdi ve ACIK gibi okundu. Otomatik
+ * "cozuldu" karari vermek yanlis kapatma riski tasidigi icin kayit
+ * SILINMEZ; bunun yerine olgusal bir bilgi verilir: yasi ve ardindan ayni
+ * kaynaktan kac normal kayit geldigi.
+ */
+export function bayatlikMetni(bildirim) {
+  if (!bildirim) return null
+  const n = bildirim.sonraki_normal_kayit
+  const yas = bildirim.yas_gun
+  const yasMetni = yas === null || yas === undefined
+    ? 'zaman çözülemedi'
+    : yas === 0 ? 'bugün' : `${yas} gün önce`
+  if (n === null || n === undefined) return { metin: yasMetni, kapanmis: null }
+  if (n === 0) {
+    return { metin: `${yasMetni} · sonrasında bu kaynaktan normal kayıt YOK`,
+             kapanmis: false }
+  }
+  return { metin: `${yasMetni} · sonrasında ${n} normal kayıt geldi`,
+           kapanmis: true }
+}

@@ -12,7 +12,7 @@
  * src/lib/bildirim-ozet.js icinde saf ve TESTLIDIR (9 test).
  */
 import { useEffect, useState } from 'react'
-import { durumOzeti, rozetSayisi, duzeyRengi, kaynakEtiketi }
+import { durumOzeti, rozetSayisi, duzeyRengi, kaynakEtiketi, bayatlikMetni }
   from '@/lib/bildirim-ozet.js'
 
 const RENK = { yuzey: '#1e293b', cizgi: '#334155', vurgu: '#D4AF37',
@@ -95,6 +95,19 @@ export default function BildirimMerkezi() {
                 </span>
                 <span style={{ color: RENK.soluk, fontSize: 11 }}>{b.kaynak}</span>
               </div>
+              {/* Bayatlik: bir hafta once kapanmis bir sorunun ACIK gibi
+                  gorunmesini engeller. Kayit SILINMEZ, yalnizca olgu yazilir. */}
+              {(() => {
+                const y = bayatlikMetni(b)
+                if (!y) return null
+                return (
+                  <div style={{ color: y.kapanmis ? '#4ade80' : RENK.soluk,
+                                fontSize: 11, marginTop: 2 }}>
+                    {y.metin}
+                    {y.kapanmis ? ' (büyük olasılıkla kapandı)' : ''}
+                  </div>
+                )
+              })()}
               <div style={{ color: RENK.metin, fontSize: 12, marginTop: 4,
                             overflowWrap: 'anywhere' }}>{b.mesaj}</div>
             </div>

@@ -64,3 +64,32 @@ test('duzey rengi bilinmeyen duzeyde cokmez', () => {
   assert.ok(duzeyRengi('kritik'))
   assert.equal(duzeyRengi('bilinmeyen'), duzeyRengi('bilgi'))
 })
+
+import { bayatlikMetni } from '../src/lib/bildirim-ozet.js'
+
+test('sonrasinda normal kayit geldiyse KAPANMIS olarak isaretlenir', () => {
+  const b = bayatlikMetni({ yas_gun: 6, sonraki_normal_kayit: 21 })
+  assert.equal(b.kapanmis, true)
+  assert.match(b.metin, /6 gün önce/)
+  assert.match(b.metin, /21 normal kayıt/)
+})
+
+test('sonrasinda normal kayit YOKSA acik sayilir', () => {
+  const b = bayatlikMetni({ yas_gun: 2, sonraki_normal_kayit: 0 })
+  assert.equal(b.kapanmis, false)
+  assert.match(b.metin, /normal kayıt YOK/)
+})
+
+test('zamani cozulemeyen kayitta kapanmis kararI VERILMEZ', () => {
+  const b = bayatlikMetni({ yas_gun: null, sonraki_normal_kayit: null })
+  assert.equal(b.kapanmis, null, 'bilinmiyorsa kapanmis/acik iddia edilmemeli')
+  assert.match(b.metin, /zaman çözülemedi/)
+})
+
+test('bugunku kayit "bugun" der', () => {
+  assert.match(bayatlikMetni({ yas_gun: 0, sonraki_normal_kayit: 3 }).metin, /bugün/)
+})
+
+test('bildirim yoksa cokmez', () => {
+  assert.equal(bayatlikMetni(null), null)
+})
