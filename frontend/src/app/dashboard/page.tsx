@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import PentagonSkor from '../../../components/PentagonSkor'
 import BildirimMerkezi from '../../../components/BildirimMerkezi'
+import KarsilastirmaTablosu from '../../../components/KarsilastirmaTablosu'
 import { useRouter } from 'next/navigation'
 import { BolgeKarti, DurumRozeti, SinyalKutusu, Satir, UstBar, AramaFormu }
   from '../../../components/DashboardBilesenleri'
@@ -992,6 +993,7 @@ export default function Dashboard() {
       )}
 
       <BildirimMerkezi />
+      <KarsilastirmaTablosu />
       <TemelSkorKarti ticker={aranmisTicker} />
       <PiyasaSinyalleri ticker={aranmisTicker} />
       <BistArastirmaMasasi />
