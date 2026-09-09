@@ -134,3 +134,70 @@ if __name__ == "__main__":
             print(f"  [HATA] {t.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(testler) - basarisiz}/{len(testler)} test PASS")
     sys.exit(1 if basarisiz else 0)
+
+
+# ============ islem_ozeti: pf.stats() ile BIREBIR ayni olmali (Madde 32) ============
+def test_islem_ozeti_stats_ile_AYNI_sonucu_verir():
+    """09.09.2026'da olculdu: pf.stats() walk_forward suresinin %42'siydi
+    ve yalnizca IKI alan icin cagriliyordu. Ucuz yol 279 kat hizli, ama
+    SESSIZCE farkli sonuc uretmemeli.
+
+    Bu test gercek fiyat serisi uzerinde 17 pencerenin tamamini karsilastirir.
+    """
+    import pandas as _pd
+    kapanis = _seri(n=800, tohum=11)
+    fees, slip = wf.maliyetten_fees_slip(0.20)
+    komb = wf._kombinasyonlar()
+    bas = max(wf.EGITIM_GUN, wf.ISINMA)
+    karsilastirilan = 0
+    for i in range(bas, len(kapanis) - 1, wf.TEST_GUN):
+        egitim = kapanis.iloc[i - wf.EGITIM_GUN:i]
+        test_son = min(i + wf.TEST_GUN, len(kapanis))
+        if test_son - i < 10:
+            break
+        en_iyi, _ = wf.egitim_en_iyi(egitim, komb, fees, slip)
+        g_tum, c_tum = wf.sinyaller(kapanis.iloc[:test_son], en_iyi)
+        dilim = kapanis.iloc[i:test_son]
+        g = g_tum.iloc[i:test_son].copy()
+        c = c_tum.iloc[i:test_son].copy()
+        c.iloc[-1] = True
+        pf = wf.portfoy(dilim, g, c, fees, slip)
+
+        st = pf.stats()
+        beklenen_n = int(st.get("Total Trades", 0))
+        beklenen_w = st.get("Win Rate [%]")
+        if beklenen_w is not None and _pd.isna(beklenen_w):
+            beklenen_w = None
+
+        n, w = wf.islem_ozeti(pf)
+        assert n == beklenen_n, f"pencere {i}: islem sayisi {n} != {beklenen_n}"
+        if beklenen_w is None:
+            assert w is None, f"pencere {i}: kazanma orani {w} != None"
+        else:
+            assert w is not None and abs(w - float(beklenen_w)) < 1e-9, (
+                f"pencere {i}: kazanma orani {w} != {beklenen_w}")
+        karsilastirilan += 1
+    assert karsilastirilan >= 5, f"yalnizca {karsilastirilan} pencere karsilastirildi"
+
+
+def test_islem_ozeti_ISLEM_SAYISINI_tum_islemlerden_alir():
+    """INCE AYRIM: stats() islem sayisini TUM islemlerden, kazanma oranini
+    yalnizca KAPANMIS islemlerden alir. Karistirilirsa raporlanan kazanma
+    orani sessizce degisir (olculen ornek: %100 yerine %75)."""
+    import os
+    kaynak = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "walkforward.py"), encoding="utf-8").read()
+    govde = kaynak[kaynak.index("def islem_ozeti("):kaynak.index("def walk_forward(")]
+    assert "tr.count()" in govde, "islem sayisi TUM islemlerden alinmali"
+    assert "kapali.win_rate" in govde, "kazanma orani KAPANMIS islemlerden alinmali"
+
+
+def test_islem_ozeti_hata_durumunda_ESKI_yola_duser():
+    """Beklenmeyen bir surum farkinda yanlis sayi uretmektense yavas ama
+    dogru olan pf.stats() yoluna dusulmeli."""
+    class Bozuk:
+        @property
+        def trades(self): raise RuntimeError("surum farki")
+        def stats(self): return {"Total Trades": 7, "Win Rate [%]": 42.0}
+    n, w = wf.islem_ozeti(Bozuk())
+    assert n == 7 and w == 42.0

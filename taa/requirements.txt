@@ -7,3 +7,11 @@ python-dotenv==1.2.2
 TA-Lib==0.7.0
 vectorbt==1.1.0
 zipline-reloaded
+# plotly SABITLENDI (09.09.2026) — vectorbt'nin gecisli bagimliligi.
+# ARIZA: taa yeniden derlendiginde plotly 7.0.0 cekildi; bu surum
+# "scattermapbox" izini KALDIRMIS, vectorbt 1.1.0 ise import aninda ona
+# basvuruyor. Sonuc: konteyner acilista cokuyor ve yeniden baslatma
+# dongusune giriyor ("Bad property path: scattermapbox").
+# Kod degismemis olsa bile SABITLENMEMIS bir gecisli bagimlilik, sonraki
+# HERHANGI bir yeniden derlemede calisan servisi dusurebilir.
+plotly<6
