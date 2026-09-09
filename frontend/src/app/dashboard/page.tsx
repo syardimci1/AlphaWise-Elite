@@ -752,16 +752,28 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
 // onceki sonuc HEMEN temizlenir: eski hissenin skorunu yeni hissenin
 // basligi altinda gostermek, sessiz ama ciddi bir yanlis bilgilendirme
 // olurdu.
+// Mercek secenekleri (Madde 31). Liste servisin /mercekler ucuyla AYNI
+// anahtarlari kullanir; ayrisma olursa yukari akis "bilinmeyen mercek"
+// uyarisi dondurur ve arayuz bunu gosterir — sessizce tarafsiza DUSMEZ.
+const MERCEKLER = [
+  { anahtar: 'tarafsiz', ad: 'Tarafsız' },
+  { anahtar: 'temettu_odakli', ad: 'Temettü' },
+  { anahtar: 'deger_odakli', ad: 'Değer' },
+  { anahtar: 'kalite_odakli', ad: 'Kalite' },
+  { anahtar: 'risk_odakli', ad: 'Risk' },
+]
+
 function TemelSkorKarti({ ticker }: { ticker: string }) {
   const [veri, setVeri] = useState<any>(null)
   const [yukleniyor, setYukleniyor] = useState(false)
   const [hata, setHata] = useState('')
+  const [mercek, setMercek] = useState('tarafsiz')
 
   useEffect(() => {
     if (!ticker) { setVeri(null); setHata(''); return }
     let iptal = false
     setVeri(null); setHata(''); setYukleniyor(true)
-    fetch(`/api/skor-sentezi/${ticker}`)
+    fetch(`/api/skor-sentezi/${ticker}?mercek=${mercek}`)
       .then((r) => r.json())
       .then((d) => {
         if (iptal) return
@@ -771,7 +783,7 @@ function TemelSkorKarti({ ticker }: { ticker: string }) {
       .catch((e) => { if (!iptal) setHata('Skor servisine ulasilamiyor: ' + e.message) })
       .finally(() => { if (!iptal) setYukleniyor(false) })
     return () => { iptal = true }
-  }, [ticker])
+  }, [ticker, mercek])
 
   if (!ticker) return null
   return (
@@ -782,6 +794,23 @@ function TemelSkorKarti({ ticker }: { ticker: string }) {
         indirgenmiş nakit akışı), beşincisi AlphaWise bileşimi. Karar kodu
         üretmez.
       </p>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        {MERCEKLER.map((m) => (
+          <button key={m.anahtar} onClick={() => setMercek(m.anahtar)}
+            style={{
+              padding: '6px 12px', borderRadius: 14, fontSize: 11, cursor: 'pointer',
+              minHeight: 32,
+              border: `1px solid ${mercek === m.anahtar ? '#D4AF37' : '#334155'}`,
+              background: mercek === m.anahtar ? 'rgba(212,175,55,0.12)' : 'transparent',
+              color: mercek === m.anahtar ? '#D4AF37' : '#94a3b8',
+            }}>
+            {m.ad}
+          </button>
+        ))}
+        <span style={{ color: '#64748b', fontSize: 10, alignSelf: 'center' }}>
+          mercek yalnızca sırayı değiştirir, ölçümü değil
+        </span>
+      </div>
       {yukleniyor && (
         <p style={{ color: '#64748b', fontSize: 14 }}>
           Mali tablolar çekiliyor ve beş eksen hesaplanıyor...

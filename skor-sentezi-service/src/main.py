@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from .sentez import sentezle, EKSEN_TANIMLARI, ASGARI_EKSEN
 from .karsilastirma import sektor_karsilastir, ASGARI_RAKIP
 from . import veri, onbellek
+from .mercek import MERCEKLER, uygula as mercek_uygula, TARAFSIZ
 
 # Anayasa Madde 1.4 geregi her cikti bu uyariyi tasir. Metin, servis
 # bagimsizligi icin burada da tutulur; maa/src/constitution.py ile
@@ -73,14 +74,31 @@ def eksenler():
             "yasal_uyari": YASAL_UYARI}
 
 
+@app.get("/mercekler")
+def mercekler():
+    """Kullanilabilir bakis acilari (Madde 31).
+
+    Mercek OLCUMU DEGISTIRMEZ; yalnizca eksen sirasini ve vurguyu degistirir.
+    Bu kisit bilincli: ayni veriden mercege gore farkli SAYILAR uretmek,
+    kullaniciya "istedigin cevabi veren mercegi sec" demek olurdu.
+    """
+    return {"mercekler": [{k: m[k] for k in
+                           ("anahtar", "ad", "aciklama", "sira", "one_cikan",
+                            "soyleyemedikleri")} for m in MERCEKLER],
+            "varsayilan": TARAFSIZ, "yasal_uyari": YASAL_UYARI}
+
+
 @app.get("/skor/{ticker}")
-def skor(ticker: str, taze: bool = False):
+def skor(ticker: str, taze: bool = False, mercek: str = TARAFSIZ):
     sonuc = _skor_hesapla(ticker, onbellek_kullan=not taze)
     if "hata" in sonuc:
         kod = 404 if "bulunamadi" in sonuc["hata"] else 502
         return JSONResponse(status_code=kod,
                             content={**sonuc, "yasal_uyari": YASAL_UYARI})
-    return {**sonuc, "yasal_uyari": YASAL_UYARI}
+    # ONBELLEGE MERCEKSIZ hali yazilir (bkz. _skor_hesapla); mercek yalnizca
+    # sunum katmaninda uygulanir. Boylece mercek degistirmek yeniden hesap
+    # gerektirmez ve onbellekte mercege gore farkli surumler olusmaz.
+    return {**mercek_uygula(sonuc, mercek), "yasal_uyari": YASAL_UYARI}
 
 
 @app.get("/sektor-indeksi")

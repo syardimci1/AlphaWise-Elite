@@ -179,3 +179,42 @@ test('kisa ad uzun etiketleri grafikte kirpar, kisalari birakir', async () => {
   assert.equal(kisaAd(''), '')
   assert.equal(kisaAd(null), '')
 })
+
+test('besgen SABIT sirayi kullanir (mercek sekli degistiremez)', async () => {
+  /* CANLI OLCUMDE BULUNDU (09.09.2026): mercek ozelligi eklendiginde besgenin
+     eksen sirasi da degisiyordu. Radar eksen sirasina DUYARLIDIR: ayni
+     sayilar farkli sirada farkli SEKIL uretir. Iki mercekte ayni sirketin
+     iki farkli sekilde gorunmesi, "mercek olcumu degistirmez" sozunu
+     goruntu katmaninda cignerdi. */
+  const { sabitSiraylaDiz, SABIT_EKSEN_SIRASI } =
+    await import('../src/lib/pentagon-geometri.js')
+  const mercekSirasi = [
+    { anahtar: 'temettu' }, { anahtar: 'finansal_saglik' },
+    { anahtar: 'kazanc_kalitesi' }, { anahtar: 'temel_guc' },
+    { anahtar: 'degerleme' },
+  ]
+  const dizili = sabitSiraylaDiz(mercekSirasi).map((e) => e.anahtar)
+  assert.deepEqual(dizili, SABIT_EKSEN_SIRASI)
+})
+
+test('sabit sirada olmayan eksen SONA konur, ATILMAZ', async () => {
+  const { sabitSiraylaDiz } = await import('../src/lib/pentagon-geometri.js')
+  const d = sabitSiraylaDiz([{ anahtar: 'yeni' }, { anahtar: 'temettu' },
+                             { anahtar: 'finansal_saglik' }])
+  assert.equal(d.length, 3)
+  assert.equal(d[0].anahtar, 'finansal_saglik')
+  assert.equal(d[d.length - 1].anahtar, 'yeni')
+})
+
+test('sabit sira sentez eksenleriyle AYNI kumeyi kapsar', async () => {
+  const { SABIT_EKSEN_SIRASI } = await import('../src/lib/pentagon-geometri.js')
+  const { readFileSync } = await import('node:fs')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, join } = await import('node:path')
+  const kok = dirname(dirname(fileURLToPath(import.meta.url)))
+  const py = readFileSync(join(dirname(kok), 'skor-sentezi-service', 'src',
+                               'sentez.py'), 'utf8')
+  const servis = [...py.matchAll(/\{"anahtar":\s*"([a-z_]+)"/g)].map((m) => m[1])
+  assert.deepEqual([...SABIT_EKSEN_SIRASI].sort(), [...servis].sort(),
+    `ayrisma: arayuz=${SABIT_EKSEN_SIRASI} servis=${servis}`)
+})

@@ -33,6 +33,7 @@
 import {
   eksenNoktalari, poligonKenarlari, halkaYaricaplari, halkaNoktalari,
   etiketKonumu, durumMetni, genelPuanMetni, kapsamMetni, kisaAd,
+  sabitSiraylaDiz,
   OLCULEMEDI, UYGULANAMAZ,
 } from '@/lib/pentagon-geometri.js'
 
@@ -48,6 +49,8 @@ const RENK = {
 }
 
 type Eksen = {
+  one_cikan?: boolean
+  mercek_gerekcesi?: string
   anahtar: string
   ad: string
   puan: number | null
@@ -71,6 +74,11 @@ type Props = {
     olculebilen_eksen: number
     asgari_eksen: number
     yasal_uyari?: string
+    mercek?: {
+      anahtar: string; ad: string; aciklama: string
+      soyleyemedikleri: string[]; uyari: string | null
+      degismezlik_notu: string
+    }
   }
 }
 
@@ -84,7 +92,10 @@ const YARICAP = 66
 
 export default function PentagonSkor({ veri }: Props) {
   const eksenler = veri.eksenler || []
-  const noktalar = eksenNoktalari(eksenler, MERKEZ, YARICAP)
+  // BESGEN sabit sirayi kullanir: mercek degistiginde SEKIL degismemeli
+  // (radar eksen sirasina duyarlidir). Alttaki satirlar mercek sirasinda kalir.
+  const besgenEksenleri = sabitSiraylaDiz(eksenler)
+  const noktalar = eksenNoktalari(besgenEksenleri, MERKEZ, YARICAP)
   const kenarlar = poligonKenarlari(noktalar)
   const halkalar = halkaYaricaplari(YARICAP)
   const kapsam = kapsamMetni(eksenler, veri.asgari_eksen ?? 3)
@@ -197,8 +208,10 @@ export default function PentagonSkor({ veri }: Props) {
             <div key={e.anahtar} style={{ marginTop: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between',
                             gap: 8, alignItems: 'baseline' }}>
-                <span style={{ color: RENK.metin, fontSize: 12 }}>
-                  {e.ad}
+                <span style={{ color: e.one_cikan ? RENK.vurgu : RENK.metin,
+                               fontSize: 12,
+                               fontWeight: e.one_cikan ? 600 : 'normal' }}>
+                  {e.one_cikan ? '★ ' : ''}{e.ad}
                   {e.yayimlanmis === false && (
                     <span style={{ color: RENK.soluk, fontSize: 10 }}> (AlphaWise bileşimi)</span>
                   )}
@@ -230,10 +243,44 @@ export default function PentagonSkor({ veri }: Props) {
                 {e.kaynak}
                 {!olculdu && e.gerekce ? ` — ${e.gerekce}` : ''}
               </div>
+              {e.mercek_gerekcesi && (
+                <div style={{ color: RENK.ikincil, fontSize: 10, marginTop: 2,
+                              paddingLeft: 8, borderLeft: `2px solid ${RENK.vurgu}` }}>
+                  {e.mercek_gerekcesi}
+                </div>
+              )}
             </div>
           )
         })}
       </div>
+
+      {/* --- Mercek: SIRALAMA degistirir, OLCUMU DEGISTIRMEZ --- */}
+      {veri.mercek && veri.mercek.anahtar !== 'tarafsiz' && (
+        <div style={{ marginTop: 10, paddingTop: 8,
+                      borderTop: `1px solid ${RENK.cizgi}` }}>
+          <div style={{ color: RENK.vurgu, fontSize: 11, fontWeight: 600 }}>
+            {veri.mercek.ad} merceği
+          </div>
+          <div style={{ color: RENK.ikincil, fontSize: 10, marginTop: 2 }}>
+            {veri.mercek.degismezlik_notu}
+          </div>
+          {veri.mercek.uyari && (
+            <div style={{ color: '#fdba74', fontSize: 10, marginTop: 4 }}>
+              {veri.mercek.uyari}
+            </div>
+          )}
+          <details style={{ marginTop: 6 }}>
+            <summary style={{ color: RENK.soluk, fontSize: 10, cursor: 'pointer' }}>
+              Bu merceğin söyleyemedikleri
+            </summary>
+            <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+              {veri.mercek.soyleyemedikleri.map((s, i) => (
+                <li key={i} style={{ color: RENK.ikincil, fontSize: 10, marginTop: 2 }}>{s}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
 
       {/* --- Gerekce: genel puan neden var/yok --- */}
       <div style={{ color: RENK.ikincil, fontSize: 11, marginTop: 12,

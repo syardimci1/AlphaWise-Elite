@@ -165,3 +165,30 @@ export function kisaAd(ad, esik = 10) {
   if (t.length <= esik) return t
   return t.split(' ')[0]
 }
+
+/**
+ * Besgen icin SABIT eksen sirasi.
+ *
+ * NEDEN (canli olcumde bulundu, 09.09.2026)
+ * -----------------------------------------
+ * Mercek ozelligi eklendiginde besgenin eksen sirasi da mercege gore
+ * degisiyordu. Radar/besgen bir gorsel olarak EKSEN SIRASINA DUYARLIDIR:
+ * ayni sayilar farkli sirada cizildiginde farkli bir SEKIL uretir. Iki
+ * mercekte ayni sirketin iki farkli sekilde gorunmesi, "mercek olcumu
+ * degistirmez" sozunu goruntu katmaninda cignerdi.
+ *
+ * Cozum: besgen HER ZAMAN yayimlanma sirasini kullanir; mercek yalnizca
+ * ALTTAKI satirlarin sirasini ve vurguyu degistirir. Boylece sekil
+ * mercekten mercege KARSILASTIRILABILIR kalir.
+ */
+export const SABIT_EKSEN_SIRASI = [
+  'finansal_saglik', 'kazanc_kalitesi', 'temel_guc', 'degerleme', 'temettu',
+]
+
+export function sabitSiraylaDiz(eksenler) {
+  const sira = new Map(SABIT_EKSEN_SIRASI.map((a, i) => [a, i]))
+  // Listede olmayan bir eksen SONA konur ama ATILMAZ.
+  return [...eksenler].sort(
+    (a, b) => (sira.has(a.anahtar) ? sira.get(a.anahtar) : 999) -
+              (sira.has(b.anahtar) ? sira.get(b.anahtar) : 999))
+}
