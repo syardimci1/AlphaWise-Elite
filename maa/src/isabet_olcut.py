@@ -17,16 +17,47 @@ Mevcut kural (main.py'de, degistirilmedi):
     TUT       dogru  <=  |getiri| < %15
     BEKLE     hic degerlendirilmez (was_correct = None)
 
-TUT'un +-%15 bandi OLCULDU ve bilgi tasimadigi gorulda. 21 sembol,
-30 is gunluk 630 pencerede:
-    |getiri| < %15 kosulu  ->  %75,9 oraninda KENDILIGINDEN saglaniyor
-Yani "TUT kararlarinin %94'u dogru" cumlesi tek basina bir sey soylemez;
-hicbir bilgisi olmayan bir sistem de ~%76 alirdi.
+TUT'un +-%15 bandi bilgi tasimiyor: kosul KENDILIGINDEN saglaniyor.
 
-YENI TUT OLCUTU: PIYASAYA GORELI
-================================
-    TUT dogru  <=  |hisse getirisi - piyasa getirisi| < %10
-Olculen taban: %58,4 (ayni 630 pencere, piyasa vekili SPY).
+OLCUM (10.09.2026, DUZELTILMIS)
+===============================
+Taban oranlari, decision_log'un GERCEK KARAR EVRENINDE olculdu:
+ASML, CAT, GOOGL, JEPI, LLY, NVDA, O, SCHD, TSM, WDC — depodaki tam
+gunluk gecmis (2020-2026), 30 barlik ufuk, n=16.367 pencere, piyasa
+vekili SPY.
+
+    esik     MUTLAK |r|    GORELI |r - r_SPY|
+    %3         %27,3            %32,1
+    %5         %41,7            %47,7      <-- secilen
+    %6         %47,9            %54,4
+    %10        %65,7            %73,0
+    %15        %79,9            %87,0
+
+ILK OLCUMUM YANLISTI — KAYDA GECIYOR
+====================================
+Bu modulun ilk surumunde "mutlak %75,9 / goreli %58,4" yaziyordu. Iki
+hata vardi ve ikisi de sonucu sistemin LEHINE bozuyordu:
+
+  1. YANLIS EVREN. Taban, kararlarin gercekten verildigi 10 sembol
+     yerine genel bir buyuk-sirket listesiyle (MSFT, AAPL, META, TSLA...)
+     olculmustu. Karar evreni farkli davraniyor.
+  2. YANLIS PENCERE. Seri market-data'nin /price ucundan alinmisti ve o
+     uc VARSAYILAN 60 bar donuyor. 30 barlik ufukla bu, sembol basina
+     30 TAMAMEN ORTUSEN pencere demek - "630 gozlem" bagimsiz degildi.
+
+Somut zarari: taban 0,584 verildiginde 13/15 dogru bir TUT sayimi
+"tabanin ustunde" (yani BECERI) diye yargilaniyor; dogru taban (0,730)
+verildiginde ayni sayim "sanstan ayirt edilemedi" cikiyor. Ayni veriden
+zit iki yargi.
+
+Bu yuzden asagidaki taban degerleri artik bir TESTLE veriden yeniden
+hesaplanip dogrulaniyor (test_isabet_taban.py); docstring bir daha
+sessizce eskiyemez.
+
+SECILEN OLCUT: PIYASAYA GORELI +-%5
+===================================
+    TUT dogru  <=  |hisse getirisi - piyasa getirisi| < %5
+Olculen taban: %47,7 — yani yazi-tura referansina en yakin esik.
 
 Mutlak bant yerine goreli bant secildi cunku mutlak bant TUT'u DUZ BIR
 PIYASADA kendiliginden odullendirir: tum piyasa %20 duserken TUT karari
@@ -43,15 +74,19 @@ isaretlenir. Mevcut durumda was_correct = None yaziliyor ve bu
 
 EKLE ve DIKKAT ET DEGISMEDI
 ===========================
-Ikisinin olcutu de olculdu ve bilgi tasidiklari gorulda (tabanlari
-sirasiyla %50,6 ve %49,0 — yazi tura civari, yani ayirt edici). Bu
+Ikisinin olcutu de olculdu ve bilgi tasidiklari gorulda (ayni evrende
+r > 0 tabani ve r < 0 tabani yazi tura civarinda, yani ayirt edici). Bu
 maddenin kapsami TUT ve BEKLE idi; calisan bir olcutu gereksiz yere
 degistirmek, eski degerlendirmeyle karsilastirilabilirligi de bozardi.
 """
 from __future__ import annotations
 
-# Piyasaya goreli TUT bandi. Olculen taban: %58,4 (630 pencere, SPY).
-TUT_GORELI_ESIK = 0.10
+# Piyasaya goreli TUT bandi.
+# Olculen taban: %47,7 (gercek karar evreni, 16.367 pencere, SPY, tam gecmis).
+# Bu deger test_isabet_taban.py tarafindan VERIDEN yeniden hesaplanip
+# dogrulanir; elle degistirilirse test kirilir.
+TUT_GORELI_ESIK = 0.05
+TUT_GORELI_TABAN = 0.477
 
 DOGRU = "dogru"
 YANLIS = "yanlis"

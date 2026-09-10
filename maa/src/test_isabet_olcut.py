@@ -69,12 +69,12 @@ def test_ekle_piyasa_getirisi_GEREKTIRMEZ():
 
 # ------------------------------------------------------ TUT (yeni)
 def test_tut_piyasaya_goreli_dogru():
-    """Hisse %12, piyasa %10 -> sapma %2 < %10 -> dogru."""
+    """Hisse %12, piyasa %10 -> sapma %2 < %5 -> dogru."""
     assert karar_degerlendir("TUT", 0.12, 0.10)["sonuc"] == DOGRU
 
 
 def test_tut_piyasadan_sapinca_yanlis():
-    """Hisse %25, piyasa %10 -> sapma %15 > %10 -> yanlis."""
+    """Hisse %25, piyasa %10 -> sapma %15 > %5 -> yanlis."""
     assert karar_degerlendir("TUT", 0.25, 0.10)["sonuc"] == YANLIS
 
 
@@ -101,13 +101,13 @@ def test_tut_piyasa_getirisi_yoksa_SIFIR_VARSAYILMAZ():
 
 
 def test_tut_sinir_esikte():
-    assert karar_degerlendir("TUT", 0.10, 0.0)["sonuc"] == YANLIS   # tam esik
-    assert karar_degerlendir("TUT", 0.0999, 0.0)["sonuc"] == DOGRU
+    assert karar_degerlendir("TUT", 0.05, 0.0)["sonuc"] == YANLIS   # tam esik
+    assert karar_degerlendir("TUT", 0.0499, 0.0)["sonuc"] == DOGRU
 
 
 def test_tut_esigi_degistirilebilir():
     assert karar_degerlendir("TUT", 0.12, 0.0, esik=0.15)["sonuc"] == DOGRU
-    assert karar_degerlendir("TUT", 0.12, 0.0, esik=0.05)["sonuc"] == YANLIS
+    assert karar_degerlendir("TUT", 0.12, 0.0, esik=0.03)["sonuc"] == YANLIS
 
 
 @pytest.mark.parametrize("esik", [0, -0.1])
@@ -115,8 +115,11 @@ def test_gecersiz_esik_olculemedi(esik):
     assert karar_degerlendir("TUT", 0.01, 0.0, esik=esik)["sonuc"] == OLCULEMEDI
 
 
-def test_varsayilan_esik_yuzde_on():
-    assert TUT_GORELI_ESIK == 0.10
+def test_varsayilan_esik_yuzde_bes():
+    """10.09.2026: %10'dan %5'e cekildi. Gerekce: ilk olcumde taban yanlis
+    hesaplanmisti (yanlis evren + ortusen pencereler); gercek karar
+    evreninde %10'un tabani %73,0, %5'inki %47,7."""
+    assert TUT_GORELI_ESIK == 0.05
 
 
 # ------------------------------------------------------ gecersiz girdi
