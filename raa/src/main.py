@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import requests
 from datetime import datetime, timedelta
 
+from src.risk_metrikleri import sortino_orani
+
 load_dotenv()
 
 
@@ -273,10 +275,29 @@ def analyze(ticker: str, period: str = "1y"):
     mean_return_annual = float(np.mean(returns) * 252)
     sharpe = (mean_return_annual - risk_free_rate) / volatility if volatility > 0 else None
 
-    # Sortino Ratio (sadece negatif getirilerin std'si)
-    downside_returns = returns[returns < 0]
-    downside_std = float(np.std(downside_returns) * np.sqrt(252)) if len(downside_returns) > 0 else 0
-    sortino = (mean_return_annual - risk_free_rate) / downside_std if downside_std > 0 else None
+    # Sortino Ratio - pay ve payda AYNI MAR (minimum kabul edilebilir getiri)
+    # ile hesaplanir.
+    #
+    # OLCULEN KUSUR (10.09.2026): oranin iki yarisi IKI FARKLI esik
+    # kullaniyordu.
+    #   Pay   : mean_return_annual - risk_free_rate   -> MAR = %4
+    #   Payda : returns[returns < 0]                  -> MAR = 0
+    # Yani "risksiz oranin ustundeki fazla getiri", "sifirin altina dusme
+    # riski"ne bolunuyordu. Bu bir Sortino orani DEGILDIR; iki farkli esige
+    # gore olculmus iki buyuklugun bolumudur ve yorumlanamaz.
+    #
+    # IKINCI KUSUR (ayni satirda): np.std(negatif_getiriler) yanlis buyuklugu
+    # olcer. Sortino'nun paydasi "asagi yonlu sapma"dir ve tanimi, esigin
+    # ALTINA dususlerin karesel ortalamasinin karekokudur - TUM gozlemler
+    # uzerinden. Eski kod ise (a) yalnizca negatif getirilerin KENDI
+    # ortalamalari etrafindaki dagilimini olcuyor, (b) bolerken yalnizca
+    # negatif gun sayisini kullaniyordu. Ikisi de paydayi sistematik olarak
+    # KUCULTUR, dolayisiyla Sortino'yu OLDUGUNDAN BUYUK gosterir.
+    #
+    # np.minimum(...) ile esigin ustundeki gunler 0 olarak dizide KALIR;
+    # boylece hem MAR tutarli olur hem de ortalama TUM gozlemler uzerinden
+    # alinir. Payda artik pay ile ayni esige gore tanimlidir.
+    sortino = sortino_orani(returns, risk_free_rate)
 
     # Maximum Drawdown
     cumulative = np.cumprod(1 + returns)
