@@ -134,6 +134,10 @@ async def health(dogrula: bool = Query(False, description="True ise anahtari can
             "yeniden_uret": KALIBRASYON["yeniden_uret"],
         },
         "redis": fred_client.redis_durumu(),
+        # Madde 44 (10.09.2026): anahtarsiz yedek kaynagin hali. Yedegin
+        # devreye girmesi SESSIZ kalmamali - hangi seride, hangi FRED
+        # hatasi yuzunden devreye girdigi burada gorunur.
+        "anahtarsiz_yedek": fred_client.yedek_durumu(),
     }
 
 

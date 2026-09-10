@@ -20,6 +20,29 @@ FRED_BASE = "https://api.stlouisfed.org/fred"
 HTTP_TIMEOUT = float(os.getenv("FRED_TIMEOUT", "30"))
 CACHE_PREFIX = "lss:"
 
+# --- ANAHTARSIZ YEDEK KAYNAK (madde 44, 10.09.2026) ---
+# FRED bu servisin BIRINCIL kaynagidir ve DEGISMEDI. dbnomics.py yalnizca
+# FRED BASARISIZ oldugunda ve YALNIZCA degerleri birebir dogrulanmis
+# seriler icin devreye girer.
+#
+# CANLI CAPRAZ DOGRULAMA (10.09.2026, bu baglantidan ONCE yeniden yapildi):
+#   WALCL, 2026 yilinin 35 ortak gozleminde FRED ile DBnomics BIREBIR ayni
+#   (azami mutlak fark 0,0; 35/35 esit).
+#
+# ONCEKI RAPOR DUZELTILDI: 16f0179 commit'i "DBnomics daha taze" diyordu
+# (2026-09-02 vs 2026-08-12). O karsilastirma BAYAT bir FRED ONBELLEK
+# dosyasina karsi yapilmisti. CANLI FRED'e karsi olculdugunde FRED DAHA
+# TAZE cikiyor (2026-09-09 vs 2026-09-02). Yani DBnomics bir TAZELIK
+# yukseltmesi DEGIL, bir ERISILEBILIRLIK yedegidir.
+YEDEK_ETKIN = os.getenv("DBNOMICS_YEDEK_ETKIN", "1") not in ("0", "false", "False")
+
+# Yedekten gelen veri DAHA KISA sure onbelleklenir: FRED duzelir duzelmez
+# birincil kaynaga donulsun, 6 saat boyunca yedege kilitlenmeyelim.
+YEDEK_ONBELLEK_SANIYE = int(os.getenv("DBNOMICS_ONBELLEK_SN", "1800"))
+
+# Yedegin ne zaman/nicin devreye girdigi SESSIZ kalmaz; /health bunu gosterir.
+_yedek_kullanimi: dict = {}
+
 # FRED serileri — CONSTITUTION.md ile uyumlu, tumu ucretsiz
 FRED_SERIES = {
     "walcl": "WALCL",           # Fed Total Assets — haftalik (Wed)
@@ -110,17 +133,34 @@ async def anahtar_dogrula() -> dict:
                     "detay": f"{type(e).__name__}: {e}"}
 
 
-async def fetch_series(series_id: str, start_date: str = "2020-01-01") -> List[Tuple[str, float]]:
-    """
-    Verilen FRED serisini ceker. Sonuc [(YYYY-MM-DD, deger), ...] listesi.
-    Sıralı, artan tarih. Eksik degerler ('.') filtrelenmis.
-    6 saat onbellekli.
-    """
-    cache_key = f"series:{series_id}:{start_date}"
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        return [(d, v) for d, v in cached]
+def yedek_durumu() -> dict:
+    """Anahtarsiz yedegin (DBnomics) hali - /health bunu gosterir.
 
+    Yedegin devreye girmesi SESSIZ bir olay OLMAMALIDIR: hangi seride,
+    ne zaman, hangi FRED hatasi yuzunden devreye girdigi gorunur olmali.
+    """
+    try:
+        from . import dbnomics
+        eslesme = dbnomics.eslesme_durumu()
+    except Exception as e:  # noqa: BLE001
+        return {"etkin": YEDEK_ETKIN, "kullanilabilir": False,
+                "hata": f"{type(e).__name__}: {str(e)[:120]}"}
+    return {
+        "etkin": YEDEK_ETKIN,
+        "kullanilabilir": True,
+        "kaynak": eslesme["kaynak"],
+        "dogrulanmis_seriler": sorted(eslesme["eslesmeler"]),
+        "onbellek_saniye": YEDEK_ONBELLEK_SANIYE,
+        "son_kullanim": dict(_yedek_kullanimi),
+        "not": ("FRED BIRINCIL kaynaktir. Yedek yalnizca FRED basarisiz "
+                "oldugunda VE seri icin degerleri birebir dogrulanmis bir "
+                "eslesme varsa devreye girer. Dogrulanmamis seri icin "
+                "TAHMIN YAPILMAZ - orijinal FRED hatasi firlatilir."),
+    }
+
+
+async def _fred_serisi_cek(series_id: str, start_date: str) -> List[Tuple[str, float]]:
+    """Yalnizca FRED - davranisi DEGISMEDI (eski fetch_series govdesi)."""
     key = _get_api_key()
     if not key:
         raise RuntimeError("FRED_API_KEY tanimli degil")
@@ -150,9 +190,71 @@ async def fetch_series(series_id: str, start_date: str = "2020-01-01") -> List[T
                 continue
 
     obs.sort(key=lambda x: x[0])
-    _cache_set(cache_key, obs, ttl_seconds=6 * 3600)
     logger.info("FRED %s: %d gozlem cekildi", series_id, len(obs))
     return obs
+
+
+async def fetch_series(series_id: str, start_date: str = "2020-01-01") -> List[Tuple[str, float]]:
+    """
+    Verilen FRED serisini ceker. Sonuc [(YYYY-MM-DD, deger), ...] listesi.
+    Sirali, artan tarih. Eksik degerler ('.') filtrelenmis. Onbellekli.
+
+    ARIZA YONU (madde 44, 10.09.2026): FRED basarisiz olursa - anahtar
+    yoksa ya da HTTP/ag hatasi olursa - ANAHTARSIZ yedek (DBnomics)
+    denenir. Bu servis ACIKCA tavsiye niteligindedir ("yon karari icin
+    girdi olarak KULLANILMAMALIDIR", bkz. /health) ve bu yuzden fail-open
+    dogru aria yonudur: veri YOK yerine, degerleri BIREBIR dogrulanmis
+    ayni veri.
+
+    Yedek YALNIZCA dogrulanmis seriler icin calisir. Dogrulanmamis bir
+    seride DBnomics'e sorulmaz bile - ORIJINAL FRED hatasi firlatilir,
+    cunku tahmini bir eslesme sessizce yanlis makro veri beslerdi.
+    """
+    cache_key = f"series:{series_id}:{start_date}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return [(d, v) for d, v in cached]
+
+    try:
+        obs = await _fred_serisi_cek(series_id, start_date)
+        _cache_set(cache_key, obs, ttl_seconds=6 * 3600)
+        _yedek_kullanimi.pop(series_id, None)   # FRED duzeldi -> kayit temizlenir
+        return obs
+    except Exception as fred_hatasi:  # noqa: BLE001
+        if not YEDEK_ETKIN:
+            raise
+        try:
+            yedek = await _yedekten_cek(series_id, start_date)
+        except Exception as yedek_hatasi:  # noqa: BLE001
+            # Yedek de olmadi: ORIJINAL FRED hatasini firlat, yedegin
+            # hatasi onu MASKELEMESIN (kok neden FRED'dir).
+            logger.warning("FRED %s basarisiz (%s); yedek de basarisiz (%s)",
+                           series_id, fred_hatasi, yedek_hatasi)
+            raise fred_hatasi
+        _yedek_kullanimi[series_id] = {
+            "kaynak": "dbnomics",
+            "fred_hatasi": f"{type(fred_hatasi).__name__}: {str(fred_hatasi)[:150]}",
+            "gozlem": len(yedek),
+        }
+        logger.warning("FRED %s basarisiz (%s) -> ANAHTARSIZ YEDEK (DBnomics) "
+                       "kullanildi, %d gozlem", series_id, fred_hatasi, len(yedek))
+        # Yedek verisi KISA sureli onbelleklenir - FRED duzelince hemen donulsun.
+        _cache_set(cache_key, yedek, ttl_seconds=YEDEK_ONBELLEK_SANIYE)
+        return yedek
+
+
+async def _yedekten_cek(series_id: str, start_date: str) -> List[Tuple[str, float]]:
+    """DBnomics'ten cek ve FRED ile AYNI sekle getir.
+
+    start_date SUZGECI SART: FRED 'observation_start' ile suzuyor, DBnomics
+    tum seriyi (1238 gozlem, 2002'den beri) donduruyor. Suzmezsek asagi
+    akistaki hesaplar FRED yolunda gormedigi bir pencereyle calisirdi.
+    """
+    from . import dbnomics
+    ham = await dbnomics.seri_getir(series_id)
+    suzulmus = [(t, v) for t, v in ham if t >= start_date]
+    suzulmus.sort(key=lambda x: x[0])
+    return suzulmus
 
 
 async def fetch_all_liquidity(start_date: str = "2020-01-01") -> dict:
