@@ -37,7 +37,17 @@ import itertools
 
 import numpy as np
 
-import olcut_katmani as _ok
+# Bu modul IKI farkli bicimde yukleniyor:
+#   uretimde  -> src.walkforward  (main.py "from . import walkforward" der,
+#                uvicorn "src.main:app" ile paket olarak calisir)
+#   testlerde -> walkforward      (cwd /app/src, duz modul)
+# Duz "import olcut_katmani" yalnizca ikincisinde calisir; uretimde
+# ModuleNotFoundError verir ve servis restart dongusune girer (10.09.2026'da
+# tam olarak bu oldu). Her iki bicimi de destekleyen tek dogru yol budur.
+try:
+    from . import olcut_katmani as _ok          # paket icinde (uretim)
+except ImportError:                             # pragma: no cover
+    import olcut_katmani as _ok                 # duz modul (testler)
 import pandas as pd
 import vectorbt as vbt
 
