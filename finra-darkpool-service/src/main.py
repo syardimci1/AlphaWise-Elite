@@ -12,6 +12,7 @@ import asyncio
 from fastapi import FastAPI, Query, HTTPException
 
 from . import baski
+from . import dix as _dix
 from . import finra
 from . import regsho
 
@@ -187,6 +188,48 @@ async def borsa_disi_baski(
         return await baski.borsa_disi_pay(t, gun=gun, geriye_bak=gun * 3 + 10)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")
+
+
+@app.get("/dix")
+async def dix_endeksi(
+    semboller: str = Query(..., description="Virgulle ayrilmis sepet, orn. AAPL,MSFT,NVDA"),
+    gun_geriye: int = Query(1, ge=1, le=10,
+                            description="Kac is gunu geriye bakilsin (T+1 yayim)"),
+):
+    """DIX metodolojisi — borsa disi kisa hacim orani, sepet agirlikli.
+
+    RESMI DIX DEGILDIR; kapsam, sepet ve agirlik farklari yanitin icinde
+    acikca verilir. Sepette olup dosyada bulunmayan sembol SIFIR SAYILMAZ,
+    kapsam disi olarak raporlanir.
+    """
+    sepet = [s.strip().upper() for s in (semboller or "").split(",") if s.strip()]
+    if not sepet:
+        raise HTTPException(status_code=400, detail="sepet bos")
+    if len(sepet) > 600:
+        raise HTTPException(status_code=400, detail="sepet en fazla 600 sembol")
+
+    from datetime import date, timedelta
+    g = date.today()
+    bakilan = 0
+    veri = None
+    while bakilan < gun_geriye * 3 + 5:
+        bakilan += 1
+        g -= timedelta(days=1)
+        if g.weekday() >= 5:
+            continue
+        veri = await regsho._gun_dosyasi(g)
+        if veri:
+            gun_geriye -= 1
+            if gun_geriye <= 0:
+                break
+            veri = None
+    if not veri:
+        raise HTTPException(
+            status_code=503,
+            detail="Istenen gun icin FINRA gunluk dosyasi yayimlanmamis")
+    sonuc = _dix.dix_hesapla(veri, sepet)
+    sonuc["tarih"] = g.isoformat()
+    return sonuc
 
 
 @app.get("/regsho-durum")
