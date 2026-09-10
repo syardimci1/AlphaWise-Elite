@@ -127,11 +127,56 @@ def index_knowledge_base():
     }
 
 
+# --- Sorgu gommesi onbellegi (madde 48) -------------------------------------
+# OLCULDU: sorgu suresinin %97'si sorgu metnini vektore cevirmekte geciyor
+# (521 ms), yalnizca %3'u ChromaDB'nin arama isinde (14 ms). Bu yuzden ayni
+# metin ikinci kez gommelenmiyor. Ayrinti: gomme_onbellek.py basi.
+try:
+    from .gomme_onbellek import GommeOnbellegi
+except ImportError:                      # duz modul olarak yuklendiginde
+    from gomme_onbellek import GommeOnbellegi
+
+_gomme_onbellegi = None
+
+
+def _onbellek():
+    """Gomme onbellegini (ve altindaki modeli) gec baslatir."""
+    global _gomme_onbellegi
+    if _gomme_onbellegi is None:
+        from chromadb.utils import embedding_functions
+        _gomme_onbellegi = GommeOnbellegi(
+            embedding_functions.DefaultEmbeddingFunction())
+    return _gomme_onbellegi
+
+
+def _gomme(q: str):
+    """Sorgu vektoru; onbellek calismazsa None doner (cagiran metne duser).
+
+    Onbellek bir HIZLANDIRMADIR. Calismazsa arama YINE YAPILMALI - sessizce
+    bos sonuc donmek, "eslesme yok" ile "gommelenemedi"yi ayni gosterirdi.
+    """
+    try:
+        return _onbellek().gom(q)
+    except Exception:
+        return None
+
+
+@app.get("/gomme-onbellek")
+def gomme_onbellek_durumu():
+    """Onbellek istatistigi (teshis)."""
+    try:
+        return _onbellek().durum()
+    except Exception as e:
+        return {"hata": f"{type(e).__name__}: {e}"}
+
+
 @app.get("/query")
 def query_knowledge_base(q: str, n_results: int = 5):
     """Verilen sorguya en yakin n_results parcayi doner."""
     col = get_collection()
-    results = col.query(query_texts=[q], n_results=n_results)
+    v = _gomme(q)
+    results = (col.query(query_embeddings=[v], n_results=n_results) if v is not None
+               else col.query(query_texts=[q], n_results=n_results))
     hits = []
     docs = results.get("documents", [[]])[0]
     metas = results.get("metadatas", [[]])[0]
@@ -235,7 +280,10 @@ def query_sinyaller(q: str, n_results: int = 3, koleksiyon: str = None):
             if kol.count() == 0:
                 cikti[ad] = {"uyari": "koleksiyon bos — once /index-sinyaller cagirin"}
                 continue
-            r = kol.query(query_texts=[q], n_results=min(n_results, kol.count()))
+            v = _gomme(q)
+            n = min(n_results, kol.count())
+            r = (kol.query(query_embeddings=[v], n_results=n) if v is not None
+                 else kol.query(query_texts=[q], n_results=n))
             cikti[ad] = [
                 {"icerik": d[:400], "meta": m, "uzaklik": u}
                 for d, m, u in zip(r["documents"][0], r["metadatas"][0], r["distances"][0])
