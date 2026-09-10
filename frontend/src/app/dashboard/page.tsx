@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import PentagonSkor from '../../../components/PentagonSkor'
+import { aramaAkisiBaslat, sembolNormalize } from '../../lib/arama-akisi'
 import BildirimMerkezi from '../../../components/BildirimMerkezi'
 import KarsilastirmaTablosu from '../../../components/KarsilastirmaTablosu'
 import PortfoyGrafigi from '../../../components/PortfoyGrafigi'
@@ -877,35 +878,40 @@ export default function Dashboard() {
     setError('')
     setResult(null)
     setGodmode(null)
+    setAranmisTicker(sembolNormalize(ticker))
+    setGodmodeLoading(true)
+
+    // UC ISTEK DE BURADA, AYNI ANDA baslar (10.09.2026 duzeltmesi).
+    // Onceki kod God Mode istegini ancak MAA'nin LLM cagrisi bittikten
+    // SONRA basltiyordu; God Mode ondan tamamen bagimsiz oldugu halde
+    // kullanici iki bekleme suresini ust uste yasiyordu. Siralama
+    // arama-akisi.js icinde toplandi ve testle kilitlendi.
+    const akis = aramaAkisiBaslat(ticker, (u) => fetch(u))
+
+    akis.godmode
+      .then(r => r.json())
+      .then(g => setGodmode(g))
+      .catch((err) => setGodmode({ error: 'God Mode servisine ulasilamiyor: ' + err.message }))
+      .finally(() => setGodmodeLoading(false))
+
+    akis.hafiza
+      .then(r => r.json())
+      .then(m => setMemories(m.memories || []))
+      .catch(() => setMemories([]))
+
     try {
       // Sunucu tarafi proxy: MAA'nin adresi tarayiciya sizmaz (bkz. api/maa/[...yol])
-      const resp = await fetch(`/api/maa/narrative-verified/${ticker.toUpperCase()}`)
+      const resp = await akis.maa
       const data = await resp.json()
       if (data.error) {
         setError(data.error)
       } else {
         setResult(data)
       }
-      // Gecmis hafiza kayitlarini da ayrica cek (paralel, ana sonucu bekletmeden)
-      fetch(`/api/maa/memory/${ticker.toUpperCase()}`)
-        .then(r => r.json())
-        .then(m => setMemories(m.memories || []))
-        .catch(() => setMemories([]))
     } catch (err: any) {
       setError('MAA servisine ulasilamiyor: ' + err.message)
     }
     setLoading(false)
-
-    // God Mode olasiliksal degerlendirmesi (bolgeler + yon kodu) - MAA sonucundan
-    // bagimsiz, ayri bir bolumde gosterilir; MAA'nin EKLE/TUT/BEKLE/DIKKAT ET
-    // karar koduna dokunmaz.
-    setAranmisTicker(ticker.toUpperCase())
-    setGodmodeLoading(true)
-    fetch(`/api/godmode/${ticker.toUpperCase()}`)
-      .then(r => r.json())
-      .then(g => setGodmode(g))
-      .catch((err) => setGodmode({ error: 'God Mode servisine ulasilamiyor: ' + err.message }))
-      .finally(() => setGodmodeLoading(false))
   }
 
   async function handleLogout() {
