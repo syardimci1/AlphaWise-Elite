@@ -310,3 +310,112 @@ def test_onbellek_anahtari_kota_sayacini_EZMEZ(kurulu_main):
                         for ad, _ in m._flashalpha_anahtarlari()}
     onbellek_anahtarlari = {k for k in sahte.depo if k.startswith("gex:sonuc:")}
     assert onbellek_anahtarlari and not (kota_anahtarlari & onbellek_anahtarlari)
+
+
+# ------------------------------------------- kapsam disi sembol (olumsuz onbellek)
+def test_kapsam_disi_kodu_taninir():
+    govde = ('{"status":"ERROR","error":"symbol_not_in_free_universe",'
+             '"message":"The Free plan only covers ~250 tracked symbols."}')
+    assert go.kapsam_disi_mi(govde) is True
+
+
+def test_diger_tier_hatalari_kapsam_disi_SAYILMAZ():
+    """Yalnizca sembol bazli kapsam disiligi saklanir; oteki tier hatalari
+    gecici olabilir ve gun boyu saklanmasi yanlis olurdu."""
+    for govde in ('{"error":"tier_restricted","message":"upgrade required"}',
+                  '{"error":"rate_limited"}', '', None,
+                  '{"message":"full-chain requires Growth plan"}'):
+        assert go.kapsam_disi_mi(govde) is False, f"yanlis eslesme: {govde!r}"
+
+
+def test_kapsam_disi_anahtari_ayri_ad_alani():
+    a = go.kapsam_disi_anahtari("ZZTEST")
+    assert a.startswith("gex:kapsamdisi:")
+    assert a != go.onbellek_anahtari("ZZTEST", None)
+    assert not a.startswith("gex:quota:")
+
+
+def test_kapsam_disi_anahtari_normalize_eder():
+    assert go.kapsam_disi_anahtari(" zztest ") == go.kapsam_disi_anahtari("ZZTEST")
+
+
+def test_kapsam_disi_anahtari_gecersiz_tur_reddeder():
+    with pytest.raises(TypeError):
+        go.kapsam_disi_anahtari(None)
+
+
+class _KapsamDisiYanit(_SahteYanit):
+    status_code = 403
+    text = ('{"status":"ERROR","error":"symbol_not_in_free_universe",'
+            '"message":"The Free plan only covers ~250 tracked symbols. '
+            'ZZTEST isn\'t one of them. Upgrade to Basic.","current_plan":"Free",'
+            '"required_plan":"Basic"}')
+
+
+class _KapsamDisiIstemci(_SahteIstemci):
+    async def get(self, *a, **k):
+        _SahteIstemci.cagri_sayisi += 1
+        return _KapsamDisiYanit()
+
+
+def test_kapsam_disi_sembol_ikinci_kez_hak_YAKMAZ(kurulu_main):
+    """Olculen gercek olay: ZZTEST sorusu 25 hakkin birini kalici yakmisti."""
+    from fastapi import HTTPException
+    m, _ = kurulu_main
+    m.httpx.AsyncClient = _KapsamDisiIstemci
+
+    with pytest.raises(HTTPException) as ilk:
+        asyncio.run(m.gamma_exposure("ZZTEST", expiration=None))
+    assert ilk.value.status_code == 402
+    assert _SahteIstemci.cagri_sayisi == 1
+    kullanilan = m.kota_durumu()["toplam_kullanilan"]
+    assert kullanilan == 1, "ilk ogrenme bir hak yakar (kacinilmaz)"
+
+    with pytest.raises(HTTPException) as ikinci:
+        asyncio.run(m.gamma_exposure("ZZTEST", expiration=None))
+    assert ikinci.value.status_code == 402
+    assert ikinci.value.detail["istek_yapilmadi"] is True
+    assert ikinci.value.detail["onbellekten"] is True
+    assert _SahteIstemci.cagri_sayisi == 1, "ikinci istek FlashAlpha'ya gitti"
+    assert m.kota_durumu()["toplam_kullanilan"] == kullanilan, "ikinci kez hak yandi"
+
+
+def test_kapsam_disi_TEK_anahtar_yakar_rotasyon_YAPMAZ(kurulu_main):
+    """Plan kisitlamasi tum anahtarlarda ayni; rotasyon 5 hakki birden yakardi."""
+    from fastapi import HTTPException
+    m, _ = kurulu_main
+    m.httpx.AsyncClient = _KapsamDisiIstemci
+    with pytest.raises(HTTPException):
+        asyncio.run(m.gamma_exposure("ZZTEST", expiration=None))
+    assert _SahteIstemci.cagri_sayisi == 1, "diger anahtarlar da denendi"
+
+
+def test_kapsam_disi_kaydi_baska_sembolu_etkilemez(kurulu_main):
+    from fastapi import HTTPException
+    m, _ = kurulu_main
+    m.httpx.AsyncClient = _KapsamDisiIstemci
+    with pytest.raises(HTTPException):
+        asyncio.run(m.gamma_exposure("ZZTEST", expiration=None))
+    m.httpx.AsyncClient = _SahteIstemci
+    y = asyncio.run(m.gamma_exposure("MSFT", expiration=None))
+    assert y["gex"] == {"net_gex": 123.0}
+
+
+def test_gecici_tier_hatasi_kalici_saklanmaz(kurulu_main):
+    """Gecici bir tier hatasini gun boyu saklamak arizayi kalici yapardi."""
+    from fastapi import HTTPException
+    m, sahte = kurulu_main
+
+    class _GeciciTier(_SahteIstemci):
+        async def get(self, *a, **k):
+            _SahteIstemci.cagri_sayisi += 1
+            y = _SahteYanit()
+            y.status_code = 403
+            y.text = '{"error":"tier_restricted","message":"upgrade your plan"}'
+            return y
+
+    m.httpx.AsyncClient = _GeciciTier
+    with pytest.raises(HTTPException):
+        asyncio.run(m.gamma_exposure("AAPL", expiration=None))
+    assert not [k for k in sahte.depo if k.startswith("gex:kapsamdisi:")], (
+        "gecici tier hatasi kapsam disi olarak saklandi")

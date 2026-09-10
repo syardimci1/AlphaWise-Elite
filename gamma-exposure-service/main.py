@@ -236,6 +236,32 @@ async def gamma_exposure(
     except Exception:
         pass   # Redis yoksa servis calismaya devam eder, sadece kota harcar
 
+    # OLUMSUZ ONBELLEK: sembol ucretsiz planin evreninde degilse bunu
+    # OGRENMEK bile bir hak yakiyor. Bu bilgi gecici degil (plan kapsami
+    # dakikalar icinde degismez), o yuzden gun sonuna kadar saklanir ve
+    # ayni sembol tekrar soruldugunda hic istek yapilmaz.
+    _kd = _go.kapsam_disi_anahtari(ticker)
+    try:
+        if _get_redis().get(_kd):
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "hata": "Sembol FlashAlpha ucretsiz planinin kapsaminda degil",
+                    "aciklama": (
+                        "Bu bilgi daha once olculdu ve gun sonuna kadar "
+                        "saklaniyor; tekrar sormak gunluk hakki bosa yakardi."
+                    ),
+                    "ticker": ticker,
+                    "istek_yapilmadi": True,
+                    "onbellekten": True,
+                    "kota_durumu": kota_durumu(),
+                },
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     on_durum = kota_durumu()
     if on_durum.get("kota_doldu"):
         raise HTTPException(
@@ -330,6 +356,14 @@ async def gamma_exposure(
             # bir hatada rotasyona devam etmek krediyi bosuna tuketir.
             govde_kucuk = r.text.lower()
             if r.status_code == 403 and ("tier_restricted" in govde_kucuk or "upgrade" in govde_kucuk or "plan" in govde_kucuk):
+                # Sembol bazli kapsam disiligi gun sonuna kadar saklanir ki
+                # ayni sembol icin bir daha hak yanmasin. Yalnizca BU hata
+                # kodu saklanir; diger tier hatalari gecici olabilir.
+                if _go.kapsam_disi_mi(r.text):
+                    try:
+                        _get_redis().setex(_kd, _gece_yarisina_kalan_saniye(), "1")
+                    except Exception:
+                        pass
                 raise HTTPException(
                     status_code=402,
                     detail={

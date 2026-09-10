@@ -30,6 +30,12 @@ from __future__ import annotations
 
 ONBELLEK_ONEKI = "gex:sonuc:"
 
+# Kapsam disi sembollerin olumsuz onbellegi. Ayri onek, ayri anlam.
+KAPSAM_DISI_ONEKI = "gex:kapsamdisi:"
+
+# FlashAlpha'nin sembolun ucretsiz evrende olmadigini bildirdigi hata kodu.
+KAPSAM_DISI_KODU = "symbol_not_in_free_universe"
+
 # FlashAlpha ucretsiz tier'inin kendi gecikmesi (dakika) — belgelenmis deger.
 KAYNAK_GECIKMESI_DK = 15
 
@@ -95,3 +101,29 @@ def saklanacak_govde(yanit: dict, simdi_ts: float) -> dict:
                           "veri_tazeligi", "flashalpha_kotasi_tuketildi")}
     govde["_alindi_ts"] = float(simdi_ts)
     return govde
+
+
+def kapsam_disi_anahtari(ticker: str) -> str:
+    """Ucretsiz planin kapsamadigi semboller icin OLUMSUZ onbellek anahtari."""
+    if not isinstance(ticker, str):
+        raise TypeError(f"ticker str olmali, {type(ticker).__name__} geldi")
+    return f"{KAPSAM_DISI_ONEKI}{ticker.upper().strip()}"
+
+
+def kapsam_disi_mi(govde: str) -> bool:
+    """Yanit govdesi 'bu sembol ucretsiz evrende yok' diyor mu?
+
+    NEDEN AYRI ELE ALINIYOR
+    =======================
+    Genel bir hatayi onbelleklemek yanlistir: gecici bir arizayi kalici
+    hale getirir. Ama bu hata GECICI DEGIL — planin kapsadigi sembol
+    kumesi (10.09.2026 itibariyla ~250 sembol) dakikalar icinde
+    degismez. Onbelleklenmezse kapsam disi bir sembol her soruldugunda
+    gunluk 25 hakkin biri kalici olarak yanar; olculdu: ZZTEST icin tam
+    olarak bu oldu.
+
+    TTL gun sonuna baglanir: kullanici plani yukseltirse en gec ertesi
+    gun (kota sifirlanmasiyla ayni anda) yeniden denenir, yani olumsuz
+    kayit bir yukseltmeyi kalici olarak gizlemez.
+    """
+    return KAPSAM_DISI_KODU in (govde or "").lower()
