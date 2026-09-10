@@ -25,10 +25,13 @@ Redis isim alani: "gex:" (ifs:, finra:dp:, congress:, llmquant: ile carpismaz)
 """
 import os
 import json
+import time
 from datetime import datetime, timezone, timedelta
 
 import httpx
 import redis
+
+import gex_onbellek as _go
 from fastapi import FastAPI, Query, HTTPException
 
 app = FastAPI(
@@ -43,6 +46,12 @@ ANAHTAR_BASINA_GUNLUK_KOTA = int(os.getenv("FLASHALPHA_DAILY_QUOTA", "5"))
 CACHE_PREFIX = "gex:"
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "30"))
 GECIS_KODLARI = {401, 403, 429}  # bu kodlarda siradaki anahtara gecilir
+
+# GEX sonuc onbellegi. Kaynak zaten ~15 dk gecikmeli veri verdigi icin
+# 15 dakikalik onbellek tazelikten pratik olarak bir sey goturmez ama
+# gunluk 25 istekten olusan butceyi katlayarak buyutur. Ayrinti ve
+# gerekce: gex_onbellek.py basi.
+GEX_ONBELLEK_TTL = int(os.getenv("GEX_TTL", "900"))   # 15 dk
 
 
 def _flashalpha_anahtarlari():
@@ -215,6 +224,18 @@ async def gamma_exposure(
             },
         )
 
+    # ONBELLEK KOTADAN ONCE OKUNUR. Sonra okunsaydi tasarruf olmazdi:
+    # kota zaten ayrilmis olurdu. Kota dolu olsa bile onbellekteki gecerli
+    # bir yanit sunulabilir — istek yapilmadigi icin hak tuketilmez.
+    _oa = _go.onbellek_anahtari(ticker, expiration)
+    try:
+        _ham = _get_redis().get(_oa)
+        if _ham:
+            return _go.isabet_yaniti(json.loads(_ham), time.time(),
+                                     GEX_ONBELLEK_TTL, kota_durumu())
+    except Exception:
+        pass   # Redis yoksa servis calismaya devam eder, sadece kota harcar
+
     on_durum = kota_durumu()
     if on_durum.get("kota_doldu"):
         raise HTTPException(
@@ -238,7 +259,27 @@ async def gamma_exposure(
             son_hata = {"anahtar": anahtar_adi, "neden": "gunluk kotasi dolu, siradaki anahtar denenecek"}
             continue
 
-        izin, kullanilan = _tek_anahtar_kota_ayir(anahtar_adi)
+        # Kota sayaci okunamiyorsa (Redis dusuk) istek YAPILMAZ. Aksi halde
+        # sinirli kaynak hicbir muhasebe olmadan harcanir: "sayamadik" ile
+        # "hakkin var" ayni sey degildir. Onceki davranis burada cıplak bir
+        # RuntimeError ile 500 uretiyordu; neden oldugu yanittan anlasilmiyordu.
+        try:
+            izin, kullanilan = _tek_anahtar_kota_ayir(anahtar_adi)
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "hata": "Kota sayaci okunamadi (Redis)",
+                    "aciklama": (
+                        "Gunluk FlashAlpha hakki sayilamadigi icin istek "
+                        "YAPILMADI. Sayilamayan bir kotayi harcamak, gunluk "
+                        "butcenin muhasebesiz tukenmesi demektir."
+                    ),
+                    "ayrinti": f"{type(e).__name__}: {str(e)[:160]}",
+                    "istek_yapilmadi": True,
+                    "redis": redis_durumu(),
+                },
+            ) from e
         if not izin:
             son_hata = {"anahtar": anahtar_adi, "neden": "kota ayirma anda doldu, siradaki anahtar denenecek"}
             continue
@@ -259,15 +300,27 @@ async def gamma_exposure(
                 veri = r.json()
             except Exception:
                 raise HTTPException(status_code=502, detail={"hata": "FlashAlpha JSON cozulemedi", "govde": r.text[:300]})
-            return {
+            _simdi = time.time()
+            yanit = {
                 "ticker": ticker,
                 "expiration": expiration,
                 "kaynak": "FlashAlpha (lab.flashalpha.com/v1/exposure/gex)",
                 "kullanilan_anahtar": anahtar_adi,
-                "veri_tazeligi": "ucretsiz tier: ~15 dakika gecikmeli",
+                "veri_tazeligi": _go.tazelik_metni(0, GEX_ONBELLEK_TTL),
                 "kota_durumu": kota_durumu(),
                 "gex": veri,
+                "onbellekten": False,
+                "onbellek_yasi_saniye": 0,
             }
+            # YALNIZCA basarili yanit onbelleklenir; hatayi 15 dk boyunca
+            # tekrar sunmak gecici bir arizayi kalici hale getirirdi.
+            try:
+                _get_redis().setex(_oa, GEX_ONBELLEK_TTL,
+                                   json.dumps(_go.saklanacak_govde(yanit, _simdi),
+                                              default=str))
+            except Exception:
+                pass
+            return yanit
 
         if r.status_code in GECIS_KODLARI:
             # 403 iki farkli sebepten gelebilir: (a) BU ANAHTAR gecersiz/kotasi
