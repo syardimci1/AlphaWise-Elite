@@ -11,6 +11,7 @@ import asyncio
 
 from fastapi import FastAPI, Query, HTTPException
 
+from . import baski
 from . import finra
 from . import regsho
 
@@ -162,6 +163,28 @@ async def regsho_gunluk(
         raise HTTPException(status_code=400, detail="gecersiz ticker bicimi")
     try:
         return await regsho.son_gunler(t, gun=gun, geriye_bak=gun * 3 + 10)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")
+
+
+@app.get("/baski/{ticker}")
+async def borsa_disi_baski(
+    ticker: str,
+    gun: int = Query(10, ge=1, le=60, description="Kac yayimlanmis is gunu"),
+):
+    """Borsa disi (dark pool) hacmin KONSOLIDE hacme orani — gunluk.
+
+    /regsho'dan farki paydadir: orada payda borsa disi hacmin kendisidir,
+    burada toplam piyasa hacmidir. "Karanlik havuz aktivitesi artti mi"
+    sorusu ancak bu oranla yanitlanabilir.
+
+    Yon iddiasi tasimaz; kalibre EDILMEMISTIR.
+    """
+    t = ticker.upper().strip()
+    if not t.isalnum() or len(t) > 6:
+        raise HTTPException(status_code=400, detail="gecersiz ticker bicimi")
+    try:
+        return await baski.borsa_disi_pay(t, gun=gun, geriye_bak=gun * 3 + 10)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")
 
