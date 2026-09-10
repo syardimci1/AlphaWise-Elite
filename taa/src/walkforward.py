@@ -36,6 +36,8 @@ Bu kural test_walkforward.py ile kilitlenmistir.
 import itertools
 
 import numpy as np
+
+import olcut_katmani as _ok
 import pandas as pd
 import vectorbt as vbt
 
@@ -84,26 +86,42 @@ def portfoy(kapanis, giris, cikis, fees, slippage):
 
 
 def olcumler(getiriler: pd.Series, islem_sayisi: int, kazanan_oran):
-    """Gunluk getiri serisinden Sharpe / toplam getiri / maks dusus."""
+    """Gunluk getiri serisinden olcutler — takilabilir katman uzerinden.
+
+    Hesap artik burada YAPILMIYOR; her olcut olcut_katmani.py icinde ayri
+    bir analizcidir (Backtrader'in analyzer fikri, kendi kodumuzla). Boylece
+    yeni bir olcut eklemek mevcut olcutlerin koduna dokunmaz.
+
+    DAVRANIS DEGISIKLIGI — sharpe artik 0.0 DEGIL, None olabilir:
+    gunluk getirilerin degiskenligi sifirsa (strateji hic islem acmadiysa
+    ya da tek gunluk veri varsa) Sharpe TANIMSIZDIR. Onceki kod 0.0
+    yaziyordu ve bu ekranda "olculdu, vasat" diye okunuyordu — bu depoda
+    232d1a0 ile kapatilan hatanin aynisi. Ayni sey kazanma_orani icin
+    zaten dogru yapiliyordu (None donuluyordu); simdi sharpe da ayni
+    sozlesmeye uyuyor.
+
+    Mevcut yedi anahtar birebir korunmustur; dort yeni olcut EKLENMISTIR.
+    """
     getiriler = getiriler.fillna(0.0)
     if len(getiriler) == 0:
         return None
-    birikimli = (1 + getiriler).cumprod()
-    toplam = (birikimli.iloc[-1] - 1) * 100
-    std = getiriler.std()
-    sharpe = float(np.sqrt(252) * getiriler.mean() / std) if std > 0 else 0.0
-    zirve = birikimli.cummax()
-    maks_dusus = float(((birikimli / zirve) - 1).min() * 100)
-    return {
-        "toplam_getiri_yuzde": round(float(toplam), 2),
-        "son_deger": round(INIT_CASH * float(birikimli.iloc[-1]), 2),
-        "sharpe": round(sharpe, 3),
-        "maks_dusus_yuzde": round(maks_dusus, 2),
-        "islem_sayisi": int(islem_sayisi),
-        "kazanma_orani_yuzde": (round(float(kazanan_oran), 2)
-                                if kazanan_oran is not None else None),
-        "gun_sayisi": int(len(getiriler)),
-    }
+    sonuc = _ok.calistir({
+        "getiriler": getiriler,
+        "islem_sayisi": islem_sayisi,
+        "kazanan_oran": kazanan_oran,
+        "baslangic_nakit": INIT_CASH,
+    })
+    cikti = _ok.duz_sozluk(sonuc)
+    # Tam sayi olmasi beklenen alanlar int'e cevrilir (sozlesme korunur).
+    for ad in ("islem_sayisi", "gun_sayisi", "en_uzun_dusus_gun",
+               "en_uzun_kayip_serisi"):
+        if cikti.get(ad) is not None:
+            cikti[ad] = int(cikti[ad])
+    # Olculemeyen olcutlerin NEDENI de tasinir — "None" tek basina sessizdir.
+    gerekce = _ok.gerekceler(sonuc)
+    if gerekce:
+        cikti["olculemedi_gerekceleri"] = gerekce
+    return cikti
 
 
 def ornek_ici(kapanis, fees, slip, p=VARSAYILAN):
