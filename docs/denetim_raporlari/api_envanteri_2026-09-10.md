@@ -45,7 +45,7 @@ Schwab                   401  evet     dogrulanamadi         dogrulanamadi      
 
 ## Okuma notları
 
-- **FRED 400** — uç ayakta,  parametresi eksik olduğu için biçim
+- **FRED 400** — uç ayakta, `api_key` parametresi eksik olduğu için biçim
   hatası veriyor. 401 ile aynı anlamda: erişilebilir, anahtar şart.
 - **LLMQuant 404** — kök yolda uç yok; servis anahtarla farklı bir yol
   kullanıyor. Ücretli olduğu için derin sorgu yapılmadı.
