@@ -1,0 +1,25 @@
+{
+  "aciklama": "Korunan dosyalarin icerik kilidi. Test her koside yeniden hesaplayip karsilastirir. Kilit dosyalari HEAD'e dondurmez; bundan sonraki degisikliklere karsi dondurur.",
+  "dosyalar": {
+    "maa/src/main.py": {
+      "sha256": "6e9f429d4e94713161f169f4a2e7259754ca6800d86a5139a8177963babca32a",
+      "bayt": 44072,
+      "kilit_aninda_HEAD_ile_ayni": true
+    },
+    "taa/src/main.py": {
+      "sha256": "accc62c256f716f843a9ab72d43d021a19279a4954c428d6e4dc48e60200deb0",
+      "bayt": 11634,
+      "kilit_aninda_HEAD_ile_ayni": true
+    },
+    "maa/src/cascade.py": {
+      "sha256": "1d0c151ef7c1a7dcccbd7f69d81bfcb9f6763aafe94d31e4d290a26e1dc7a779",
+      "bayt": 11130,
+      "kilit_aninda_HEAD_ile_ayni": false
+    },
+    "maa/src/llmquant_client.py": {
+      "sha256": "29ce43b29bed4e19464193cfa449f463a80b5ac322aa0e9a05997eefbbccde9b",
+      "bayt": 5015,
+      "kilit_aninda_HEAD_ile_ayni": false
+    }
+  }
+}
