@@ -525,6 +525,11 @@ services:
   skor-sentezi:
     build: ./skor-sentezi-service
     container_name: alphawise-skor-sentezi
+    # Madde 37 (12.09.2026): FMP anahtari CAPRAZ DOGRULAMA icin eklendi.
+    # Birincil veri kaynagi HALA yfinance'tir (skorlar.py/veri.py, ucretsiz,
+    # degismedi); FMP yalnizca financetoolkit ile IKINCI, bagimsiz bir
+    # kaynaktan ayni kalemleri cekip sapmayi olcmek icin kullanilacak.
+    env_file: ./skor-sentezi-service/.env
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
       interval: 60s
