@@ -2,3 +2,16 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 yfinance==1.6.0
 pandas==2.2.3
+# financetoolkit (madde 37, 12.09.2026) - CAPRAZ DOGRULAMA icin, BIRINCIL
+# kaynak DEGIL (yfinance kaldi). SURUM SECIMI OLCULEREK yapildi:
+# financetoolkit==2.2.0 (guncel) `pandas>=3.0` istiyor ve mevcut pandas==2.2.3
+# pinini kirar; skorlar.py/veri.py'nin pandas 3.x ile davranisi TEST
+# EDILMEDI, riskli olurdu. financetoolkit==2.1.4 `pandas>=2.2` ile uyumlu -
+# ayni deger dogrulandi (Total Assets/Net Receivables/Total Debt AAPL 2024
+# icin 2.2.0 ile BIREBIR ayni).
+financetoolkit==2.1.4
+# financetoolkit==2.1.4'un KENDI PAKETLEME HATASI: `pyyaml` yalnizca "mcp"
+# extra'sinda beyan ediliyor (PyPI metadata) ama paket TEMEL import
+# zincirinde (portfolio_controller -> helpers) KOSULSUZ import ediyor.
+# Beyan edilmeyen bir calisma-zamani bagimliligi - OLCULDU, elle eklendi.
+pyyaml

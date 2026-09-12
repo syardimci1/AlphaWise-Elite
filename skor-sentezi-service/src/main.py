@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from .sentez import sentezle, EKSEN_TANIMLARI, ASGARI_EKSEN
 from .karsilastirma import sektor_karsilastir, ASGARI_RAKIP
-from . import veri, onbellek
+from . import veri, onbellek, fmp_capraz
 from .mercek import MERCEKLER, uygula as mercek_uygula, TARAFSIZ
 
 # Anayasa Madde 1.4 geregi her cikti bu uyariyi tasir. Metin, servis
@@ -99,6 +99,37 @@ def skor(ticker: str, taze: bool = False, mercek: str = TARAFSIZ):
     # sunum katmaninda uygulanir. Boylece mercek degistirmek yeniden hesap
     # gerektirmez ve onbellekte mercege gore farkli surumler olusmaz.
     return {**mercek_uygula(sonuc, mercek), "yasal_uyari": YASAL_UYARI}
+
+
+@app.get("/capraz-dogrula/{ticker}")
+def capraz_dogrula(ticker: str):
+    """FMP (financetoolkit) ile CAPRAZ DOGRULAMA - madde 37, 12.09.2026.
+
+    SALT-OKUNUR TESHIS: skor hesabini DEGISTIRMEZ, /skor ucunu ETKILEMEZ.
+    yfinance BIRINCIL kaynak olarak KALIR. Bu uc yalnizca ikinci, bagimsiz
+    bir kaynaktan (FMP) ayni ham kalemleri cekip sapmayi OLCER - hangi
+    kaynagin dogru oldugunu SOYLEMEZ.
+
+    FMP_API_KEY tanimsizsa ag cagrisi YAPILMAZ (bkz. fmp_capraz.py).
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        return JSONResponse(status_code=502,
+                            content={"olculebildi": False, "asama": "kutuphane",
+                                     "neden": "yfinance yuklenemedi"})
+    try:
+        sirket = veri.sirket_getir(yf, ticker)
+    except Exception as e:
+        return JSONResponse(status_code=502,
+                            content={"olculebildi": False, "asama": "yfinance",
+                                     "neden": f"mali tablo alinamadi: {type(e).__name__}"})
+    if not sirket.donemler:
+        return JSONResponse(status_code=404,
+                            content={"olculebildi": False, "asama": "yfinance",
+                                     "neden": "Bu sembol icin mali tablo bulunamadi"})
+    sonuc = fmp_capraz.capraz_dogrula(sirket)
+    return {**sonuc, "yasal_uyari": YASAL_UYARI}
 
 
 @app.get("/sektor-indeksi")
