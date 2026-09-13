@@ -9,6 +9,14 @@ KAPSAM SINIRI: Bu servis institution-filter-service'in (port 8190)
 YERINI ALMAZ ve ona DOKUNMAZ. Ikisi bagimsiz calisir; hangisinin ne
 zaman kullanilacagina cagiran taraf (God Mode) karar verir.
 
+EQUIBLES TAMAMLAYICISI (14.09.2026, madde 58): /holders opt-in
+equibles_genis_kapsam parametresiyle 44 kurumluk haritanin OTESINE
+gecebilir; /institution-activity/{cik} ceyrekten-ceyrege pozisyon
+degisimi (initiated/increased/reduced/exited) sunar - bu veri SEC'ten
+DOGRUDAN uretilemez. Ikisi de opsiyonel, canli karar yoluna baglanmaz.
+Ayrinti: equibles_client.py, /opt/alphawise/
+EQUIBLES_ENTEGRASYON_DEGERLENDIRMESI.md.
+
 DIL KURALI: Bu servis yalnizca OLCULEN veriyi raporlar. Yon tahmini,
 oneri ya da emir kipi URETMEZ — 13F verisi gecmis bir donemin
 fotografidir, gelecek iddiasi tasimaz.
@@ -21,7 +29,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Query
 
-from . import cik_evreni, ciks, cusips
+from . import cik_evreni, ciks, cusips, equibles_client
 from .rate_limiter import HizSinirlayici, VARSAYILAN_HIZ
 from .sec_client import SecIstemci, kullanici_ajani
 
@@ -244,6 +252,14 @@ async def health():
         "bagimsizlik_notu": ("institution-filter-service (8190) ile hicbir "
                              "kod/veri bagimliligi yoktur; CIK listesi kendi "
                              "kopyasidir."),
+        "equibles_tamamlayici": {
+            "anahtar_tanimli": bool(os.getenv("EQUIBLES_API_KEY")),
+            "holders_ucu": f"{equibles_client.EQUIBLES_BASE}/stocks/{{ticker}}/institutional-holders",
+            "activity_ucu": f"{equibles_client.EQUIBLES_BASE}/institutions/{{cik}}/activity",
+            "kota": await equibles_client.kota_durumu(_redis),
+            "not": ("Gunluk 100 istekli kota congress-trading-service ile "
+                    "PAYLASILIR (ayni Redis konteyneri, ayni anahtar)."),
+        },
     }
 
 
@@ -398,13 +414,20 @@ async def holders(
     max_kurum: int = Query(
         6, ge=1, le=26,
         description="Bu cagride EN FAZLA kac kurum SEC'ten cekilsin (sinirsiz tarama yok)"),
+    equibles_genis_kapsam: bool = Query(
+        False, description=(
+            "True ise Equibles'tan (varsa anahtar) 44 kurumla SINIRLI OLMAYAN "
+            "genis kapsamli sahip listesi de eklenir. PAYLASILAN gunluk 100 "
+            "istekten 1 harcar - varsayilan False (madde 58)."
+        )),
 ):
     """
     Bir hissede pozisyonu olan kurumlari, hisse degerine gore siralar.
 
     KAPSAM DURUSTLUGU: Bu, "en buyuk sahipler" listesi DEGILDIR — yalnizca
     bu servisin bildigi kurum haritasi taranir. Taranmayan/atlanan kurumlar
-    yanitta ACIKCA listelenir; sessiz kesme yapilmaz.
+    yanitta ACIKCA listelenir; sessiz kesme yapilmaz. equibles_genis_kapsam=
+    true ile bu sinir asilabilir (bkz. equibles_client.py).
     """
     tk = ticker.upper().strip()
     cozum_sabit = cusips.coz(tk)
@@ -446,6 +469,11 @@ async def holders(
 
     bulunanlar.sort(key=lambda x: -x["hisse_pozisyonu"]["deger_usd"])
 
+    equibles_genis_liste = None
+    equibles_hata = None
+    if equibles_genis_kapsam:
+        equibles_genis_liste, equibles_hata = await equibles_client.holders_cek(_redis, tk)
+
     return {
         "ticker": tk,
         "cusip": cozum_sabit.get("cusip"),
@@ -462,4 +490,34 @@ async def holders(
                       "yukarida acikca listelenmistir."),
         },
         "kaynak": "SEC EDGAR (resmi, anahtarsiz)",
+        "equibles_genis_kapsam": equibles_genis_liste,
+        "equibles_hata": equibles_hata,
     }
+
+
+@app.get("/institution-activity/{cik}")
+async def institution_activity(
+    cik: str,
+    bucket: str = Query(
+        None, description="initiated | increased | reduced | exited (bos ise hepsi)"),
+    limit: int = Query(20, ge=1, le=500),
+):
+    """
+    Equibles TAMAMLAYICISI (14.09.2026, madde 58): bir kurumun ceyrekten
+    ceyrege pozisyon degisimi (initiated/increased/reduced/exited).
+
+    Bu servis bu veriyi SEC'ten DOGRUDAN uretemez — SEC her 13F-HR'yi
+    tek bir donemin fotografi olarak yayimlar, iki donem arasindaki
+    degisim SEC'in kendisinde HESAPLANMIS halde YOKTUR. lambda=0 gozlem:
+    hicbir canli karar yoluna baglanmaz.
+    """
+    if bucket and bucket not in ("initiated", "increased", "reduced", "exited"):
+        raise HTTPException(
+            status_code=422,
+            detail="bucket: initiated | increased | reduced | exited olmali",
+        )
+    veri, hata = await equibles_client.institution_activity_cek(
+        _redis, cik, bucket=bucket, limit=limit)
+    if veri is None:
+        raise HTTPException(status_code=502, detail=hata)
+    return veri
