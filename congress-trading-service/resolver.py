@@ -1,11 +1,12 @@
 """
 ALPHAWISE - Congress Trading Service / kaynak zinciri ve normallestirme (19.08.2026)
 
-Iki kaynakli otomatik yedekleme (fallback). Bugun llmquant_client.py'de kurulan
+UC kaynakli otomatik yedekleme (fallback). Bugun llmquant_client.py'de kurulan
 "birincil basarisiz olursa sessizce yedege dus" mantiginin aynisi:
 
   1) BIRINCIL : Quiver Quantitative  (api.quiverquant.com, QUIVER_API_KEY)
   2) YEDEK    : Financial Modeling Prep (stable/senate-latest + house-latest)
+  3) TAMAMLAYICI: Equibles (api.equibles.com/v1, EQUIBLES_API_KEY) - 13.09.2026
 
 Gecis kosullari: zaman asimi (varsayilan 5 sn), HTTP 401/403/429/5xx, baglanti
 hatasi. Her yanitta hangi kaynagin kullanildigi "source" alaninda bildirilir.
@@ -19,6 +20,39 @@ KAYNAK NOTLARI (19.08.2026 canli testle dogrulandi):
 - FMP: /stable/senate-latest ve /stable/house-latest ucretsiz katmanda calisiyor
   (HTTP 200, meclis basina 100 kayit). Sembol/isim filtreli uclar ve sayfalama
   parametreleri ucretli (402), bu yuzden filtreleme SERVIS ICINDE yapilir.
+
+=======================================================================
+EQUIBLES NEDEN "3. KAYNAK" - "1. KAYNAK" DEGIL (13.09.2026)
+=======================================================================
+Equibles GRUP2 denetiminde degerlendirilen `daniel3303/Equibles` (self-hosted
+.NET, GRUP2'de MIMARI-CIKAR kararli) ile AYNI ISIMDE ama TAMAMEN AYRI bir
+UNDUR: burada entegre edilen, o ayni urunun BARINDIRILAN (hosted) REST API'si
+(api.equibles.com) - self-hosted karari BURADA DEGISMEDI, HICBIR yeni
+container KURULMADI.
+
+Equibles TAM ZINCIRE (Quiver/FMP gibi "tum listeyi cek, yerelde filtrele")
+GIREMEZ: /v1/congress/trades ucu ticker VEYA memberId'den EN AZ BIRINI
+ZORUNLU KILAR - "hepsini ver" modu YOKTUR. Bu yuzden TAMAMLAYICI bir
+kaynaktir: yalnizca Quiver+FMP zincirinin O SPESIFIK ticker icin SIFIR
+kayit dondurdugu durumda cagrilir (FMP'nin ucretsiz katmani yalnizca
+meclis basina EN SON 100 aciklamayla sinirlidir - bkz. asagida OLCULEN
+BOSLUK). Boylece gunluk 100 isteklik butce yalnizca GERCEKTEN ihtiyac
+duyulan sorgularda harcanir.
+
+OLCULEN BOSLUK (13.09.2026, canli): Quiver 403 (abonelik kapsamiyor);
+FMP ucretsiz katman toplam 200 kayit (meclis basina 100) donduruyor VE
+sembol/isim filtreli uclari ucretli oldugu icin bu 200 kayit SERVIS
+ICINDE filtreleniyor - yani FMP'nin dar penceresinde OLMAYAN bir ticker
+icin zincir SESSIZCE bos donuyordu. Equibles /v1/congress/trades
+varsayilan olarak GECEN YIL'a kadar giden, ticker'a OZEL bir sorgu
+sunuyor - bu, olculen boslugu GERCEKTEN kapatir.
+
+BUTCE ONAY KURALI: Equibles ucretsiz katmani GUNDE 100 istekle SINIRLI
+(MCP+REST ORTAK sayac, api.equibles.com/docs/rate-limits ile canli
+dogrulandi). Bu SINIR ASILMAZ: _equibles_kota_kontrol() yerel bir
+GUVENLIK PAYI birakir (95/100'de yerelden durur) VE her yanittaki
+X-RateLimit-Remaining basligini SUNUCUNUN KENDI gercegi olarak okuyup
+yerel tahminin ONUNE koyar - iki sayac celisirse sunucuya guvenilir.
 """
 import os
 import re
@@ -77,10 +111,12 @@ def redis_durumu():
 
 
 def anahtar_durumu():
+    anahtarlar = ("QUIVER_API_KEY", "FMP_API_KEY", "EQUIBLES_API_KEY")
     return {
         "QUIVER_API_KEY": bool(os.getenv("QUIVER_API_KEY")),
         "FMP_API_KEY": bool(os.getenv("FMP_API_KEY")),
-        "eksik": [k for k in ("QUIVER_API_KEY", "FMP_API_KEY") if not os.getenv(k)],
+        "EQUIBLES_API_KEY": bool(os.getenv("EQUIBLES_API_KEY")),
+        "eksik": [k for k in anahtarlar if not os.getenv(k)],
     }
 
 
@@ -120,6 +156,7 @@ def _fmp_normalize(kayit, meclis):
     )
     alt, ust, orta = _tutar_ayristir(kayit.get("amount"))
     return {
+        "source": "fmp",
         "member": ad,
         "first_name": kayit.get("firstName"),
         "last_name": kayit.get("lastName"),
@@ -153,6 +190,7 @@ def _quiver_normalize(kayit):
     alt, ust, orta = _tutar_ayristir(ham_tutar)
     meclis = kayit.get("House") or kayit.get("Chamber")
     return {
+        "source": "quiver",
         "member": ad,
         "first_name": None,
         "last_name": None,
@@ -259,6 +297,170 @@ async def fmp_cek(timeout=None):
         return senato + temsilciler, None
     except Exception as e:
         return None, {"kaynak": "fmp", "neden": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
+# --- Kaynak 3: Equibles (TAMAMLAYICI - yalnizca zincir bos donunce) ----------
+
+EQUIBLES_BASE = os.getenv("EQUIBLES_BASE_URL", "https://api.equibles.com/v1")
+EQUIBLES_TIMEOUT = float(os.getenv("EQUIBLES_TIMEOUT", "10"))
+# Gunluk ucretsiz kota 100'dur (docs/rate-limits, 13.09.2026 canli dogrulandi).
+# Yerel guvenlik payi: 95'te DUR - sunucu sayaci ile bizim sayacimiz bir
+# istekte bile driftlense, son 5 hak "kaza" yuzunden tukenmesin.
+EQUIBLES_GUNLUK_LIMIT = int(os.getenv("EQUIBLES_GUNLUK_LIMIT", "100"))
+EQUIBLES_GUVENLIK_PAYI = int(os.getenv("EQUIBLES_GUVENLIK_PAYI", "5"))
+
+
+def _equibles_normalize(kayit):
+    """Equibles /v1/congress/trades semasi (camelCase) -> ortak sema.
+
+    ONEMLI DURUSTLUK NOTU (13.09.2026): dokumantasyondaki (docs/llms-full.txt)
+    GetCongressionalTrades ORNEGI, MCP aracinin INSAN-OKUNUR tablo formatidir
+    ve alan adlari (member/chamber/asset/amountRange) GERCEK REST JSON'iyla
+    AYNI DEGILDIR. Bu fonksiyon ilk yazildiginda o ornege guvenmisti; GERCEK
+    anahtarla canli cagri yapilinca (NVDA, 13.09.2026) sema TAMAMEN FARKLI
+    cikti ve duzeltildi. Ders: "dokumantasyon ornegi" ile "REST'in gercekte
+    donduruduğu JSON" AYNI SEY degildir - canli dogrulanmadan varsayilmaz.
+
+    GERCEK ALAN ADLARI (canli olculdu): transactionDate, filingDate, ticker,
+    memberId (uuid), memberName, memberPosition ("Representative"|"Senator" -
+    "chamber" DEGIL), transactionType, assetName ("asset" DEGIL), assetType,
+    subholding (araci/emeklilik hesabi - "account" kavraminin karsiligi),
+    ownerType (bos dize | "Spouse" | "Self" - "owner" DEGIL), amountFrom/
+    amountTo (SAYISAL tam sayilar - "amountRange" METIN DEGIL, yani
+    _tutar_ayristir() BURADA GEREKMEZ; Quiver/FMP'nin aksine Equibles tutari
+    zaten AYRISTIRILMIS veriyor).
+    """
+    konum = (kayit.get("memberPosition") or "").strip().lower()
+    alt = kayit.get("amountFrom")
+    ust = kayit.get("amountTo")
+    orta = (alt + ust) / 2 if alt is not None and ust is not None else None
+    aralik_metni = f"${alt:,}-${ust:,}" if alt is not None and ust is not None else None
+    return {
+        "source": "equibles",
+        "member": kayit.get("memberName"),
+        "member_id": kayit.get("memberId"),
+        "first_name": None,
+        "last_name": None,
+        "chamber": "Senate" if konum.startswith("sen") else ("House" if konum else None),
+        "district": None,
+        "ticker": (kayit.get("ticker") or "").upper() or None,
+        "asset_description": kayit.get("assetName"),
+        "asset_type": kayit.get("assetType"),
+        "transaction_type": kayit.get("transactionType"),
+        "transaction_date": kayit.get("transactionDate"),
+        "disclosure_date": kayit.get("filingDate"),
+        "amount_range": aralik_metni,
+        "amount_min_usd": alt,
+        "amount_max_usd": ust,
+        "amount_mid_usd": orta,
+        "owner": kayit.get("ownerType") or None,
+        "comment": kayit.get("subholding") or None,
+        "source_link": None,
+    }
+
+
+def _equibles_kota_anahtari():
+    import datetime
+
+    gun = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    return f"equibles:gunluk:{gun}"
+
+
+def equibles_kota_durumu():
+    """Yerelde tutulan gunluk sayac (sunucunun kendi X-RateLimit-* basligi
+    HER YANITTA guncellenir; bu fonksiyon istek ATMADAN once en son bilinen
+    durumu okur).
+
+    IKI SAYAC CELISIRSE SUNUCUYA GUVENILIR: 'equibles:sunucu_kalan',
+    sunucunun EN SON yanitindaki X-RateLimit-Remaining degeridir - bizim
+    yerel sayacimizdan BAGIMSIZ olarak (baska bir surec/servis ayni
+    anahtari kullanmis olabilir, ya da bir istek sayilmadan basarisiz
+    olmus olabilir) GERCEK durumu yansitir. Ikisi de guvenlik payinin
+    ALTINDAYSA istek reddedilir - HANGISI daha kisitlayicıysa o kazanir.
+    """
+    try:
+        r = _get_redis()
+        kullanilan = int(r.get(_equibles_kota_anahtari()) or 0)
+        sunucu_kalan_ham = r.get("equibles:sunucu_kalan")
+        sunucu_kalan = int(sunucu_kalan_ham) if sunucu_kalan_ham is not None else None
+    except Exception:
+        kullanilan = 0
+        sunucu_kalan = None
+
+    yerel_izinli = kullanilan < (EQUIBLES_GUNLUK_LIMIT - EQUIBLES_GUVENLIK_PAYI)
+    sunucu_izinli = sunucu_kalan is None or sunucu_kalan > EQUIBLES_GUVENLIK_PAYI
+    return {
+        "limit": EQUIBLES_GUNLUK_LIMIT,
+        "guvenlik_payi": EQUIBLES_GUVENLIK_PAYI,
+        "yerel_sayac_kullanilan": kullanilan,
+        "sunucu_bildirdigi_kalan": sunucu_kalan,
+        "yerelden_izinli_mi": yerel_izinli and sunucu_izinli,
+    }
+
+
+def _equibles_kota_artir(sunucu_kalan=None, sunucu_sifirlanma=None):
+    """Yerel sayaci 1 artirir VE sunucunun bildirdigi X-RateLimit-Remaining
+    degerini SAKLAR - bir sonraki kontrol sunucu gercegini yerel tahminin
+    ONUNE koyabilsin diye."""
+    try:
+        r = _get_redis()
+        anahtar = _equibles_kota_anahtari()
+        p = r.pipeline()
+        p.incr(anahtar)
+        p.expire(anahtar, 48 * 3600)
+        if sunucu_kalan is not None:
+            p.set("equibles:sunucu_kalan", sunucu_kalan, ex=6 * 3600)
+        p.execute()
+    except Exception:
+        pass
+
+
+async def equibles_ticker_cek(ticker: str, limit: int = 50, timeout=None):
+    """Bir ticker icin Equibles congress trade kayitlarini ceker.
+
+    ARIZA YONU: Quiver/FMP ile AYNI sozlesme - basarili olursa
+    (kayitlar, None), olmazsa (None, hata_sozlugu). Kota ASILIRSA
+    (yerel guvenlik payi ya da sunucunun 429'u) istek HIC ATILMAZ/
+    sessizce None doner - butce onay kurali GEREGI, gunluk 100 hakkin
+    UZERINE CIKILMAZ.
+    """
+    key = os.getenv("EQUIBLES_API_KEY")
+    if not key:
+        return None, {"kaynak": "equibles", "neden": "EQUIBLES_API_KEY tanimli degil"}
+
+    kota = equibles_kota_durumu()
+    if not kota["yerelden_izinli_mi"]:
+        return None, {
+            "kaynak": "equibles",
+            "neden": (f"gunluk guvenlik payi asildi (yerel sayac="
+                     f"{kota['yerel_sayac_kullanilan']}/{EQUIBLES_GUNLUK_LIMIT}, "
+                     f"pay={EQUIBLES_GUVENLIK_PAYI}) - istek ATILMADI"),
+            "kota_asimi": True,
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout or EQUIBLES_TIMEOUT) as c:
+            r = await c.get(
+                f"{EQUIBLES_BASE}/congress/trades",
+                params={"ticker": ticker.upper(), "limit": limit},
+                headers={"Authorization": f"Bearer {key}"},
+            )
+        sunucu_kalan = r.headers.get("X-RateLimit-Remaining")
+        _equibles_kota_artir(sunucu_kalan=sunucu_kalan)
+
+        if r.status_code == 200:
+            govde = r.json()
+            satirlar = govde.get("data")
+            if not isinstance(satirlar, list):
+                return None, {"kaynak": "equibles", "neden": "beklenmeyen govde tipi"}
+            return [_equibles_normalize(x) for x in satirlar], None
+        if r.status_code == 429:
+            return None, {"kaynak": "equibles", "http_status": 429,
+                          "neden": "sunucu gunluk limiti asildi (Equibles kendi sayacinda)"}
+        return None, {"kaynak": "equibles", "http_status": r.status_code,
+                      "neden": r.text[:160]}
+    except Exception as e:
+        return None, {"kaynak": "equibles", "neden": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
 # --- Zincir ------------------------------------------------------------------

@@ -103,6 +103,18 @@ async def kaynak_durumu():
                 "sembol/isim filtreli uclar ucretli (402), bu yuzden filtreleme servis icinde yapilir."
             ),
         },
+        "tamamlayici": {
+            "ad": "Equibles",
+            "endpoint": f"{resolver.EQUIBLES_BASE}/congress/trades",
+            "kimlik_dogrulama_gerekli": True,
+            "kimlik_dogrulama_yontemi": "Authorization: Bearer <EQUIBLES_API_KEY>",
+            "anahtar_tanimli": bool(os.getenv("EQUIBLES_API_KEY")),
+            "cagrilma_kosulu": (
+                "YALNIZCA Quiver+FMP zinciri istenen ticker icin SIFIR kayit "
+                "dondurdugunde cagrilir - bkz. /trades/{ticker}."
+            ),
+            "kota": resolver.equibles_kota_durumu(),
+        },
         "gecis_kurali": "HTTP 401/403/429/5xx veya zaman asimi -> otomatik yedege dusulur",
     }
 
@@ -137,18 +149,36 @@ async def hisse_islemleri(
     ticker: str,
     limit: int = Query(100, ge=1, le=1000),
 ):
-    """Verilen hisse icin Kongre uyesi islemleri."""
+    """Verilen hisse icin Kongre uyesi islemleri.
+
+    EQUIBLES TAMAMLAYICISI (13.09.2026): Quiver+FMP zinciri BU TICKER icin
+    SIFIR kayit dondururse (FMP ucretsiz katmaninin dar 200-kayitlik
+    penceresinde bu ticker YOKSA - olculen bosluk, bkz. resolver.py basligi),
+    Equibles'a BU TICKER'A OZEL bir sorgu atilir. Zincir zaten kayit
+    BULDUYSA Equibles'a HIC dokunulmaz - gunluk 100 istekli butce yalnizca
+    GERCEKTEN bos donen sorgularda harcanir."""
     veri = await resolver.kayitlari_getir()
     if not veri["records"]:
         raise HTTPException(status_code=502, detail=veri)
     vurus = resolver.ticker_filtrele(veri["records"], ticker)
+
+    equibles_kullanildi = False
+    equibles_hata = None
+    if not vurus:
+        ek_kayitlar, equibles_hata = await resolver.equibles_ticker_cek(ticker, limit=limit)
+        if ek_kayitlar:
+            vurus = ek_kayitlar
+            equibles_kullanildi = True
+
     vurus.sort(key=lambda k: (k.get("transaction_date") or ""), reverse=True)
     return {
         "ticker": ticker.upper(),
-        "source": veri["source"],
-        "source_label": veri["source_label"],
+        "source": "equibles" if equibles_kullanildi else veri["source"],
+        "source_label": "Equibles (tamamlayici)" if equibles_kullanildi else veri["source_label"],
         "fallback_used": veri["fallback_used"],
         "primary_error": veri["primary_error"],
+        "equibles_supplement_used": equibles_kullanildi,
+        "equibles_error": equibles_hata,
         "found": len(vurus) > 0,
         "ozet": resolver.ozetle(vurus),
         "trades": vurus[:limit],
