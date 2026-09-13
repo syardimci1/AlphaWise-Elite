@@ -5,6 +5,7 @@ diye raporlanamaz. Bu, sistemin kendini oldugundan iyi gostermesini
 engelleyen tek mekanizma.
 """
 import math
+from pathlib import Path
 
 import pytest
 
@@ -164,3 +165,29 @@ def test_TUT_olcutu_gercek_tabani_yansitir():
     ekle = taban_orani_olc(k, 30, lambda r: r > 0)["taban_orani"]
     assert tut > ekle, f"TUT tabani ({tut}) EKLE tabanindan ({ekle}) yuksek degil"
     assert tut > 0.5, f"TUT olcutu beklendigi kadar musamahakar degil: {tut}"
+
+
+# ---------------------------------------------------------------------
+# MADDE 47 DEVAMI (13.09.2026) — isabet.py'nin eskimis bulgusu duzeltildi.
+# Bu testler duzeltmenin GERI SESSIZCE ESKIMESINI engeller.
+# ---------------------------------------------------------------------
+def test_ESKIMIS_bulgu_GUNCELLEME_notuyla_isaretli():
+    """isabet.py'nin ilk surumundeki (%71,9) bulgusu artik ESKIMIS olarak
+    isaretlenmis olmali; sessizce dogruymus gibi durmamali."""
+    kaynak = Path(__file__).with_name("isabet.py").read_text(encoding="utf-8")
+    assert "ARTIK ESKIMIS" in kaynak
+    assert "isabet_olcut.py" in kaynak
+
+
+def test_GUNCELLEME_notu_gercek_ISABET_OLCUT_degerleriyle_TUTARLI():
+    """Duzeltme notundaki rakamlar, isabet_olcut.py'deki GERCEK sabitlerle
+    AYRISAMAZ - biri degisirse digeri de guncellenmeli."""
+    import isabet_olcut
+    kaynak = Path(__file__).with_name("isabet.py").read_text(encoding="utf-8")
+    # TUT_GORELI_TABAN = 0.477 -> "%47,7" metninde gecmeli
+    beklenen_taban = f"{isabet_olcut.TUT_GORELI_TABAN * 100:.1f}".replace(".", ",")
+    assert f"%{beklenen_taban}" in kaynak, (
+        f"isabet_olcut.TUT_GORELI_TABAN={isabet_olcut.TUT_GORELI_TABAN} "
+        f"({beklenen_taban}) duzeltme notunda yok - rakamlar ayrismis olabilir")
+    beklenen_esik = f"{isabet_olcut.TUT_GORELI_ESIK * 100:.0f}"
+    assert f"%{beklenen_esik}" in kaynak

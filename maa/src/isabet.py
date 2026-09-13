@@ -12,12 +12,30 @@ Halkayi kapatmadan once oranin KENDISININ anlamli olmasi gerekir. Iki
 sorun olculdu:
 
 1. TUT OLCUTU NEREDEYSE HER ZAMAN SAGLANIYOR
-   Kural (maa/src/main.py): TUT dogru sayilir eger |getiri| < %15.
-   Gercek fiyatlarla olculdu (12 sembol x 30 gunluk 360 pencere):
-       TUT olcutunun TABAN orani  = %71,9
-       EKLE olcutunun (r>0) tabani = %41,1
-   Yani "TUT kararlarinin %100'u dogru" cumlesi tek basina hicbir sey
-   soylemez; hicbir bilgisi olmayan bir sistem de ~%72 alirdi.
+   Kural (bu docstring yazildiginda, main.py): TUT dogru sayilir eger
+   |getiri| < %15. Gercek fiyatlarla olculdu (12 sembol x 30 gunluk 360
+   pencere): TUT olcutunun TABAN orani = %71,9; EKLE olcutunun (r>0)
+   tabani = %41,1. Yani "TUT kararlarinin %100'u dogru" cumlesi tek
+   basina hicbir sey soylemez; hicbir bilgisi olmayan bir sistem de
+   ~%72 alirdi.
+
+   GUNCELLEME (13.09.2026, Madde 47 devami — bu tespit ARTIK ESKIMIS):
+   Yukaridaki %71,9 rakami IKI hatali varsayimla olculmustu ve ikisi de
+   sonucu sistemin LEHINE bozuyordu: (a) 12 sembol GERCEK karar evreni
+   degildi, genel bir buyuk-sirket listesiydi; (b) 360 pencere GUNLUK
+   KAYDIRILAN, tamamen ORTUSEN pencerelerdi - bagimsiz gozlem degildi.
+   maa/src/isabet_olcut.py bu iki hatayi (10.09.2026, b347a93) duzeltti:
+   gercek 10-sembollu karar evreni (ASML, CAT, GOOGL, JEPI, LLY, NVDA, O,
+   SCHD, TSM, WDC) + piyasaya GORELI olcut (mutlak degil) ile yeniden
+   olcup +-%5 esigini (taban %47,7, n=16.367 ORTUSEN pencere) sectI.
+   13.09.2026'da (Madde 47, bagimsizlik duzeltmesi) bu olcum ORTUSMEYEN
+   pencerelerle (n_eff=382) tekrarlandi: taban %51,05, Wilson %95 GA
+   [%46,05; %56,02] - onceki %47,7 bu aralikta, yani duzeltme SECIMI
+   DEGISTIRMEDI, DOGRULADI. Guncel, canli olcut icin bkz. isabet_olcut.py
+   (TUT_GORELI_ESIK, TUT_GORELI_TABAN). Bu dosyanin FONKSIYONLARI
+   (wilson_araligi, isabet_degerlendir, taban_orani_olc) hicbir esigi
+   veya taban rakamini SABIT KODLAMIYOR - genel amacli, hala gecerli;
+   eskimis olan yalnizca yukaridaki NUMERIK BULGUYDU.
 
 2. ORNEK SAYISI COK KUCUK
    102 katman-tabanli kararin yalnizca 12'si degerlendirilmis
