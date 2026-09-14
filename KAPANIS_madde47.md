@@ -128,42 +128,108 @@ yok (ön-kayıt+FDR), bağımsızlık düzeltildi, holdout'a bakılmadı, veri s
 sapmadı, örnek yeterliliği A'da var B'de yok, Simpson paradoksu yok ama
 ciddi sembol-bazında heterojenlik var (açık soru), seçim yanlılığı yok.
 
-## 🔴 MODEL YÜKSELTME ÖNERİSİ: Nokta 1
+## Model Yükseltme Noktası 1 — tetiklendi, onaylandı, çözüldü
 
-FDR sonrası **hiçbir seçenek anlamlı değil** (A: p=0,682; B'nin 3 eşiği de
-FDR sonrası anlamsız) ve B'nin örnek büyüklüğü (n_eff≤4) hiçbir eşikte güç
-gereksinimini karşılamıyor. Bu, istatistiksel belirsizlik altında karar
-önerisi üretmek için daha güçlü akıl yürütme gerektiriyor. **Opus + High'a
-geçilmesini öneririm. Onay verene kadar ilerlemeyeceğim.**
+**Tetiklenme (Sonnet+High):** BH-FDR sonrası hiçbir seçenek anlamlı değildi
+ve B'nin örneklemi güç gereksinimini karşılamıyordu. Faz 2.2 gereği durup
+Opus+High önerildi. **Kullanıcı onayladı** ve Opus+High ile devam edildi.
 
-### Kullanıcıya sunulan 3 seçenek (ölçülmüş haliyle)
+**Opus turunda çözülen asıl mesele:** Sonnet turunda "H_A yanlış
+çerçevelenmiş olabilir" diye işaretlenen şüphe, burada **kanıta bağlandı**
+ve karara dönüştürüldü (V-013…V-017).
 
-**A — TUT bandı ±%5 (zaten uygulanmış, 10.09.2026):**
-n_eff-düzeltmesi seçimi **doğruladı** (eski %47,7 yeni %95 GA'nın içinde).
-Literal olarak "%50'den anlamlı farklı" değil — ama bu muhtemelen **tasarım
-hedefinin başarısı**: eşik bilerek yazı-tura noktasına kalibre edilmişti.
-**Önerilen aksiyon: değişiklik gerekmiyor, mevcut durum korunsun.**
-Risk: düşük (zaten canlıda, geri alma zaten mümkün — `git revert b347a93`).
+---
 
-**B — BEKLE için puanlı ölçüt tanımlamak:**
-Gerçek veri (n=12, n_eff≤4) hiçbir δ için yeterli güce sahip değil.
-Ayrıca commit `232d1a0`'ın "ölçülemedi ≠ sıfır" ilkesiyle **kavramsal
-gerilim** taşıyor — BEKLE'yi fiyat hareketiyle puanlamak, tam olarak o
-commit'in düzelttiği hatayı geri getirebilir.
-**Önerilen aksiyon: BEKLE puanlanmasın, mevcut `uygulanamaz` durumu
-korunsun** (zaten canlıda böyle). Risk: düşük (dokunmama).
+## KARAR: **C** — A korunsun, B uygulanmasın
 
-**C — Dokunmama:**
-A zaten yapılmış ve doğrulanmış durumda; B'nin puansız kalması hem veri
-yetersizliği hem ilke tutarlılığı açısından **haklı**. `isabet.py`'nin
-eskimiş bulgusu bu görevde ayrıca (A/B/C kararından bağımsız olarak)
-düzeltildi (`6680dd3`).
+### A (TUT bandı ±%5) — DEĞİŞİKLİK GEREKMİYOR, doğrulandı
 
-**Önerim:** **C** (A zaten tamam, B'ye dokunulmasın), çünkü kanıt B'yi
-desteklemiyor ve B, projenin kendi "ölçülemedi ≠ sıfır" ilkesiyle çelişebilir.
-Ama bu benim önerim — karar sizde.
+Ön-kayıttaki H_A **yanlış çerçevelenmişti**. Bir taban oranı 0,50'ye
+yakınken Bernoulli varyansı `p(1−p)` maksimumdur; yani ölçüt sapmayı en
+yüksek güçle saptar. ±%5 eşiğinin **tasarım hedefi tabanın 0,50'ye yakın
+olmasıydı** — ondan uzaklaşması değil. Dolayısıyla "%50'den anlamlı farklı
+mı?" testinin reddedilememesi, kalibrasyonun **başarısıdır**.
 
-**BEKLİYORUM — kullanıcı onayı olmadan ilerlemeyeceğim.**
+Y7 gereği ön-kayıt değiştirilmedi. Ön-kayıtlı test sonucu olduğu gibi
+raporlandı (p=0,682) **ve** doğru belirtilmiş test (TOST eşdeğerlik)
+**post-hoc etiketiyle** ayrıca yürütüldü. Marj post-hoc seçilmedi:
+±0,10, projenin kendi kodunda (`maa/src/test_isabet_taban.py:124`,
+commit `b347a93`, **bu görevden önce**) taahhüt edilmiş marjdır.
+
+| Küme | p̂ | n_eff | Wilson %95 GA | TOST p | Eşdeğerlik |
+|---|---|---|---|---|---|
+| Geliştirme | 0,5105 | 382 | [0,4605; 0,5602] | 1,77e-04 | **KURULDU** |
+| Holdout | 0,4606 | 165 | [0,3863; 0,5367] | 5,60e-02 | **KURULAMADI** (sınırda) |
+
+**Holdout dürüstçe:** eşdeğerlik %95 güvenle **doğrulanamadı** (p=0,056).
+Ama bu bir *başarısızlık kanıtı değil*, *doğrulama gücü yetersizliğidir*:
+nokta tahmini (0,4606) marjın rahatça içinde, ve ön-kayıtlı **ikincil**
+test iki dönem arasında **fark bulmuyor** (Newcombe GA
+[−0,0412; +0,1393], sıfırı kapsıyor; Cohen's h=+0,0998). Ön-kayıtlı
+**birincil** test de her iki kümede **aynı** sonucu veriyor. Yani holdout
+geliştirmeyle çelişmiyor — yalnızca daha küçük.
+
+→ **Eşik kararlı ve yazı-turaya yakın. Değiştirmek için gerekçe yok.**
+
+### B (BEKLE'ye puanlı ölçüt) — UYGULANMASIN, üç bağımsız gerekçe
+
+**(1) İstatistiksel.** FDR sonrası hiçbir δ anlamlı değil. n_eff≤11;
+δ=%5/%7 için n_min=277 bağımsız gözlem — mevcut hızda (0,32 benzersiz
+gün/takvim günü) **~2,3 yıl**.
+
+**(2) Ampirik — asıl kanıt.** BEKLE dönemleri koşulsuz tabandan
+**ayırt edilemiyor** ve görünen yön **eşiğe göre işaret değiştiriyor**:
+
+| δ | BEKLE | Koşulsuz | Fark GA | Sıfırı kapsıyor | Görünen yön |
+|---|---|---|---|---|---|
+| %3 | 0,167 | 0,227 | [−0,182; +0,222] | evet | daha çalkantılı |
+| %5 | 0,417 | 0,370 | [−0,178; +0,312] | evet | daha sakin |
+| %7 | 0,583 | 0,491 | [−0,173; +0,317] | evet | daha sakin |
+
+İşaretin eşikle dönmesi **gürültünün imzasıdır**. Aynı veriden yalnızca
+eşik seçerek zıt iki anlatı üretilebiliyor — `b347a93`'ün kendi dersinin
+("aynı veriden zıt iki yargı") tekrarı.
+
+**(3) Kavramsal.** BEKLE = "ölçemedik" (geçerli katman < 3). Fiyat
+hareketiyle puanlamak, ölçülemedi'yi piyasa çağrısına çevirir — commit
+`232d1a0`'ın kapattığı hata. Ayrıca **ters teşvik** yaratır: sakin
+piyasada çekimserliği ödüllendirir, çalkantılıda cezalandırır — oysa
+çekimserlik en çok çalkantıda değerlidir.
+
+→ **BEKLE `uygulanamaz` kalmalı** (canlıda zaten öyle: 12 kayıtta
+`goreli_sonuc='uygulanamaz'`).
+
+### C (dokunmama) — SEÇİLEN
+
+A için değişiklik gerekmiyor (doğrulandı), B için kanıt yok ve ilke karşı.
+Tek gerçek kusur — `isabet.py`'nin eskimiş %71,9 bulgusu — A/B/C
+kararından **bağımsız** olarak zaten düzeltildi (`6680dd3`).
+
+---
+
+## Faz 3 — Uygulama
+
+**Uygulanacak kod değişikliği YOK** (karar C). Faz 3.0'ın geri dönüş
+etiketi yine de atıldı: `pre-madde47-*`.
+
+Bu görevde yapılan tek kod değişikliği (`6680dd3`, `isabet.py` docstring
+düzeltmesi) A/B/C kararından bağımsızdır ve şu kanıtlarla kapatıldı:
+docstring-soyulmuş **AST özeti önce/sonra birebir aynı**; 2 yeni test;
+mutasyon sınandı (TUT_GORELI_TABAN değiştirilince yeni test yakaladı).
+
+## Faz 4 — Son Denetim
+
+| Kriter | Sonuç |
+|---|---|
+| (a) Korunan dosyalar boş diff | ✅ `5b44eea~1..HEAD` içinde `maa/src/main.py`, `taa/src/main.py`, `cascade.py`, `llmquant_client.py` **hiç geçmiyor** |
+| (b) Tüm testler PASS | ✅ **157 passed** (4 dosya hariç: önceden var olan `httpx` eksikliği, bu görevden bağımsız) |
+| (c) AST temiz | ✅ `isabet.py` saf hesaplama modülü — yazma/IO çağrısı yok |
+| (d) Hukuki dil | ✅ yasaklı kalıp taraması temiz |
+
+**Not (Y1/Y2 çatışması):** Görevin Y2'si `maa/src/main.py`'ye izin
+veriyordu; CLAUDE.md'nin **KORUNAN DOSYALAR** kuralı vermiyor. CLAUDE.md
+üstün tutuldu, dosyaya dokunulmadı. Bu, kararı **etkilemedi** — çünkü
+seçilen karar (C) zaten kod değişikliği gerektirmiyor.
 
 ## Önce/Sonra Kanıtı
 
@@ -172,16 +238,24 @@ kod-only AST özeti önce/sonra **birebir aynı** (`6680dd3` commit mesajı).
 
 ## Holdout Sonucu
 
-**Bakılmadı** (Faz 3'e geçilmediği için henüz gerekmiyor; A/B/C kararı
-netleşirse ve bir kod değişikliği gerekirse o zaman çalıştırılacak).
+**Tek seferlik açıldı** (Opus turunda, karar gerekçesini
+doğrulamak için). Sonuç yukarıda V-014/V-015'te: nokta tahmini
+geliştirmeyle uyumlu (0,4606 vs 0,5105), iki dönem arasında anlamlı fark
+yok, ama eşdeğerlik %95 güvenle **doğrulanamadı** (TOST p=0,056, sınırda,
+n_eff=165 nedeniyle). Ön-kayıtlı **birincil** test her iki kümede aynı
+sonucu verdiği için "karar geri alınır" koşulu **tetiklenmedi** — ayrıca
+geri alınacak bir karar da yok (C = değişiklik yok).
 
 ## Push Durumu
 
-3 commit, henüz push edilmedi (kullanıcı onayı bekleniyor, ayrıca Model
-Yükseltme Noktası tetiklendiği için A/B/C kararı da bekliyor):
-- `5b44eea` — ön-kayıt
-- `6680dd3` — isabet.py düzeltmesi (bağımsız, A/B/C kararından etkilenmiyor)
-- Rollback etiketi: `pre-madde47-<tarih>` (Faz 3.0, `6680dd3`'ten önce atıldı)
+4 commit, **push kullanıcı onayı bekliyor**:
+- `5b44eea` — ön-kayıt (pre-registration)
+- `6680dd3` — `isabet.py` eskimiş bulgu düzeltmesi + 2 test
+- `8cc733d` — Faz 0–2 belgeleri (Sonnet turu)
+- (bu commit) — Faz 2 kararı + Faz 3–4 (Opus turu)
+
+Rollback etiketi: `pre-madde47-*` (`6680dd3`'ten önce).
+Geri alma: `git revert 6680dd3` (tek kod commit'i; diğerleri yalnızca belge).
 
 ## Kendi Bulduğum Hatalar
 
@@ -192,4 +266,17 @@ BEKLE satırı (NVDA, 2026-08-02). Kök nedeni bu görevin kapsamı dışında.
 
 Bkz. aşağıdaki yeni V-011.
 
-SONRA DUR (Model Yükseltme Noktası 1 nedeniyle) — yeni iş icat etme.
+## Önerilen Sonraki 3 Adım (her biri ölçülebilir + geri alınabilir)
+
+1. **BEKLE birikimini izle, ~2,3 yıl sonra B'yi yeniden aç.** Ölçülebilir:
+   `decision_log`'da `decision='BEKLE' AND evaluated_at IS NOT NULL`
+   benzersiz gün sayısı ≥ 277 olduğunda. Geri alınabilir: yalnızca gözlem.
+2. **Holdout eşdeğerliğini yeniden ölç** (veri büyüdükçe). Bugün TOST
+   p=0,056 ile sınırda kaldı; n_eff ~250'ye çıktığında kesinleşir.
+   Ölçülebilir, geri alınabilir: yalnızca ölçüm.
+3. **Sembol-bazında heterojenliği ele al** (V-011): sabit ±%5 bandının
+   tabanı JEPI'de 0,914, NVDA'da 0,211. Volatiliteye normalize bir bant
+   (ATR/β ayarlı) araştırılabilir — **ayrı bir madde**, bu görevin kapsamı
+   dışında.
+
+SONRA DUR — yeni iş icat etme.

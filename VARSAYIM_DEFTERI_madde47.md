@@ -113,3 +113,75 @@ bildiriliyor.
 ### V-012 [AÇIK SORU] `decision_log`'daki yinelenen satırın kök nedeni
 Hata Hafızası Hata #1'e bakınız. Bu görev yalnızca okuma yaptı; kök neden
 araştırması ayrı bir görev gerektirir.
+
+## Faz 2 — Karar (Opus + High, Model Yükseltme Noktası 1 onayı sonrası)
+
+### V-013 [DOĞRULANDI] H_A YANLIŞ ÇERÇEVELENMİŞTİ — doğru test EŞDEĞERLİK testidir
+Bir taban oranının amacı, bilgisiz bir sistemin ölçütü sağlama oranını
+vermektir. Taban 0,95'e yakınsa ölçüt doygundur (bilgi taşımaz); 0,05'e
+yakınsa da öyle. **Taban 0,50'ye yakınken Bernoulli varyansı `p(1−p)`
+maksimumdur** — yani ölçüt, sapmayı en yüksek güçle saptar. Dolayısıyla
+±%5 eşiği için **tasarım hedefi tabanın 0,50'ye YAKIN olmasıdır**, ondan
+uzaklaşması değil.
+
+Ön-kayıttaki H_A ("taban %50'den anlamlı farklılaşır") bu hedefin
+**tersini** test ediyor: reddedilememesi kalibrasyonun BAŞARISIDIR.
+Y7 gereği ön-kayıt değiştirilmedi; ön-kayıtlı test sonucu olduğu gibi
+raporlandı (p=0,682, reddedilemedi) **ve** doğru şekilde belirtilmiş test
+(TOST eşdeğerlik) **post-hoc olarak açıkça etiketlenip** ayrıca yürütüldü.
+
+**Marj post-hoc seçilmedi:** ±0,10 marjı projenin kendi kodunda
+`maa/src/test_isabet_taban.py:124` (`0.40 <= olculen <= 0.60`), commit
+`b347a93`, 10.09.2026 — **bu görevden önce** taahhüt edilmiş.
+
+### V-014 [DOĞRULANDI] A — geliştirmede eşdeğerlik KURULDU, holdout'ta KURULAMADI (sınırda)
+| Küme | p̂ | n_eff | Wilson %95 GA | TOST p | Eşdeğerlik |
+|---|---|---|---|---|---|
+| Geliştirme | 0,5105 | 382 | [0,4605; 0,5602] | 1,77e-04 | **KURULDU** |
+| Holdout (tek seferlik) | 0,4606 | 165 | [0,3863; 0,5367] | 5,60e-02 | **KURULAMADI** |
+
+Holdout'ta başarısızlık **sınırdadır** (p=0,056 vs α=0,05) ve GA
+genişliğinden kaynaklanır (n_eff 382→165). **Nokta tahmini (0,4606)
+marjın rahatça içindedir.**
+
+### V-015 [DOĞRULANDI] İki dönem arasında ANLAMLI FARK YOK — eşik kararlı
+Ön-kayıtlı ikincil test (Newcombe hibrit %95 GA, geliştirme − holdout):
+fark = +0,0499, GA = **[−0,0412; +0,1393] → sıfırı kapsıyor**.
+Cohen's h = +0,0998 (ihmal edilebilir).
+Ön-kayıtlı **birincil** test (Wilson GA %50'yi dışlıyor mu?) **her iki
+kümede de aynı sonucu** verdi: dışlamıyor. Yani holdout, geliştirmeyle
+**çelişmiyor**; yalnızca eşdeğerliği %95 güvenle doğrulayacak kadar
+büyük değil.
+
+### V-016 [DOĞRULANDI] B — üç BAĞIMSIZ gerekçeyle reddediliyor
+**(1) İstatistiksel:** BH-FDR sonrası hiçbir δ anlamlı değil. n_eff≤11
+benzersiz gün; δ=%5 ve %7 için n_min=277 bağımsız gözlem gerekiyor —
+mevcut birikim hızında (**0,32 benzersiz gün/takvim günü**) yaklaşık
+**2,3 YIL**.
+
+**(2) Ampirik — asıl kanıt:** BEKLE dönemleri, koşulsuz tabandan
+istatistiksel olarak **ayırt edilemiyor**, ve görünen yön **eşiğe göre
+işaret değiştiriyor**:
+
+| δ | BEKLE | Koşulsuz taban | Fark GA (Newcombe) | Sıfırı kapsıyor | Görünen yön |
+|---|---|---|---|---|---|
+| %3 | 0,167 | 0,227 (n_eff=1336) | [−0,182; +0,222] | **evet** | BEKLE daha çalkantılı |
+| %5 | 0,417 | 0,370 | [−0,178; +0,312] | **evet** | BEKLE daha sakin |
+| %7 | 0,583 | 0,491 | [−0,173; +0,317] | **evet** | BEKLE daha sakin |
+
+İşaretin eşiğe göre dönmesi **sinyalin değil gürültünün imzasıdır**.
+Aynı veriden, yalnızca eşik seçimiyle, zıt iki anlatı üretilebiliyor —
+bu, `b347a93`'ün kendi dersinin ("aynı veriden zıt iki yargı") tekrarı.
+
+**(3) Kavramsal:** BEKLE, geçerli katman sayısı 3'ün altına düştüğünde
+üretilir; yani **"ölçemedik"** demektir. Fiyat hareketiyle puanlamak,
+ölçülemedi'yi bir piyasa çağrısına çevirir — commit `232d1a0`'ın
+kapattığı hatanın ta kendisi. Dahası **ters teşvik** yaratır: sakin
+piyasada çekimser kalmayı ödüllendirir, çalkantılı piyasada cezalandırır
+— oysa çekimserlik en çok çalkantıda değerlidir.
+
+### V-017 [DOĞRULANDI] KARAR: **C** — A korunsun, B uygulanmasın
+Faz 2.1'in dört koşulu B için sağlanmıyor (anlamlılık yok, etki yok,
+güç yok). A için değişiklik zaten gerekmiyor — mevcut hâli doğrulandı.
+`isabet.py`'nin eskimiş bulgusu A/B/C'den bağımsız olarak düzeltildi
+(`6680dd3`).
