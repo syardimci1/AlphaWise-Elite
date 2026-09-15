@@ -2,8 +2,6 @@
 import { useEffect, useRef } from 'react'
 import { createChart, ColorType, CandlestickSeries, IChartApi, ISeriesApi } from 'lightweight-charts'
 
-const MARKET_DATA_URL = process.env.NEXT_PUBLIC_MARKET_DATA_URL || 'http://localhost:8160'
-
 type Props = {
   ticker: string
   // Koyfin olay katmani (EventOverlayLayer) icin EKLENDI - opsiyonel,
@@ -27,7 +25,7 @@ export default function PriceChart({ ticker, onHazir }: Props) {
     })
     const candleSeries = chart.addSeries(CandlestickSeries)
 
-    fetch(`${MARKET_DATA_URL}/price/${ticker}`)
+    fetch(`/api/market-data/${ticker}`)
       .then((res) => res.json())
       .then((result) => {
         if (!result.data) return
