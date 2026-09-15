@@ -103,6 +103,12 @@ services:
       # dogrulama bu ic adresi kullanir. Cerez ADI yine genel url'den
       # turetilir (bkz. src/lib/oturum.ts).
       SUPABASE_INTERNAL_URL: http://supabase-kong:8000
+      # koyfin_event_overlay feature flag (C5) - "0" = kapali (varsayilan).
+      # Degistirip `docker compose up -d --no-deps frontend` ile ANINDA
+      # (yeniden derleme YOK, yalnizca recreate) acilir/kapanir - kill
+      # switch bunu kullanir.
+      KOYFIN_EVENT_OVERLAY_ENABLED: "0"
+      KOYFIN_PREVIEW_TOKEN: ""
     volumes:
       # Gun sonu raporlari - SALT OKUNUR (:ro). Dashboard bu dizini yalnizca
       # listeler ve .pdf indirir; hicbir kosulda yazamaz.
