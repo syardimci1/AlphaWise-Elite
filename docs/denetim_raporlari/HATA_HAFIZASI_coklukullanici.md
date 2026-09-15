@@ -2,10 +2,14 @@
 
 **Tarih:** 15 Eylül 2026
 
-Bu çalışma sırasında **dört hata** yapıldı. Üçü benim kendi kodumda/testimde,
-biri göçün kendisinde. Hepsi yakalandı ve düzeltildi. Burada yazılmalarının
-nedeni, ikisinin **sessizce yanlış bir "güvenli" raporuna** yol açabilecek
-türden olmasıdır.
+Bu çalışma sırasında **dört hata** yapıldı (H-1..H-4): üçü benim kendi
+kodumda/testimde, biri göçün kendisinde. Hepsi yakalandı ve düzeltildi.
+Burada yazılmalarının nedeni, ikisinin **sessizce yanlış bir "güvenli"
+raporuna** yol açabilecek türden olmasıdır.
+
+Beşinci kayıt (H-5) bir hata değil, testin bulduğu **önceden var olan bir
+üretim hatasıdır**; buraya konmasının nedeni taşıdığı iki derstir. Altıncısı
+(H-6), göç üretime uygulandıktan **sonra** ortaya çıkan bir ölçüt eskimesidir.
 
 ---
 
@@ -104,9 +108,63 @@ iki kez yanlış sonuca götürdü (H-3 ve H-4).
 
 ---
 
+## H-5 — Olumlu denetim, aranmayan bir üretim hatasını buldu
+
+**Ne oldu:** Bu bir hata *yapmak* değil, bir hatayı *bulmak*. Üretimde meşru
+kullanımın bozulmadığını ölçen olumlu denetim beklenmedik biçimde kırmızıya
+döndü: `duplicate key value violates unique constraint "user_portfolios_pkey"`.
+
+Kök neden 006 değildi. `user_portfolios_id_seq`, tabloda `id=1` satırı
+dururken `is_called=f` durumundaydı; yani portföy oluşturan **ilk gerçek
+kullanıcı** çakışma hatası alacaktı. Göç sequence'e yalnızca `REVOKE`
+uyguluyor — bu yetki alır, değer değiştirmez — ve aynı çakışma 006'dan
+bağımsız olarak izole ortamda da yeniden üretildi.
+
+**Beklenmedik yan etki:** PostgreSQL'de `nextval` **işlem dışıdır**. Testin
+INSERT'i başarısız olup geri alındığı hâlde sayacı ilerletti ve hatayı fiilen
+giderdi. Yani `ROLLBACK`, üretimde "hiçbir iz bırakmaz" anlamına gelmez.
+
+**Ders — iki tane:**
+
+1. *"Her şey engellendi" testi yarım bir testtir.* Bu hatayı bulan şey saldırı
+   denemesi değil, **meşru kullanımın hâlâ çalıştığını** sınayan denetimdi.
+   Yalnızca reddedilmeyi ölçen bir ağ, bu hatayı asla göremezdi.
+2. *`ROLLBACK` her şeyi geri almaz.* Sequence değerleri, `NOTIFY`, dosya
+   yazımı ve harici çağrılar işlem dışıdır. Üretimde "güvenli çünkü geri
+   alıyorum" derken bu istisna akılda tutulmalıdır.
+
+## H-6 — Canlı üretimi "taban" sayan test, üretim değişince yanlış oldu
+
+**Ne oldu:** Geri alma testi, hedef durumu **canlı üretimden okuyordu**:
+"geri alma sonrası ACL, üretimdekiyle aynı olmalı." Bu, göç uygulanana kadar
+doğruydu. 006 üretime uygulandığı an üretim artık "006 öncesi" değil "006
+sonrası" durumu gösterir oldu ve test, **hiç değişmemiş, sağlam çalışan** bir
+geri almayı 3 FAIL ile bozuk raporladı.
+
+İkinci deneme de yanlıştı: hedef elle sabitlendi, ama `information_schema`'nın
+tablo yetkilerinden **türettiği** kolon satırları (`KOL:...`) atlandı; eksik
+taban yine yanlış FAIL üretti.
+
+**Düzeltme:** Taban artık `01_uretim_acl_esitle.sql` çalıştırılarak
+**üretilir**. Bu döngüsel değildir: o dosya yetkileri açık `GRANT`'larla
+kurar, geri alma göçü ise **bağımsız bir yoldan** aynı duruma dönmek
+zorundadır. İkisinin aynı parmak izini vermesi anlamlı bir testtir.
+
+Aynı turda üçüncü bir ölçüt eskimesi daha çıktı: `goc_testi.py`,
+`git grep "def karar_uret"` ile canlı karar yolunu arıyordu ve **kendisi**
+o dizgeyi içerdiği için kendini buluyor, kendi düzenlenmesini "canlı yol
+değişti" diye raporluyordu.
+
+**Ders:** Bir testin tabanı, testin **doğruladığı şeyden bağımsız** ve
+**zamanla kaymayan** bir kaynaktan gelmelidir. Canlı bir sistemi hem
+değiştirip hem de referans almak, testi ilk başarılı değişiklikte yalancı
+yapar. Bu, H-3'ün aynı kökten üçüncü tekrarıdır: **kod doğruydu, ölçüt
+yanlıştı.**
+
 ## Ortak ders
 
-Dört hatanın üçünde de sorun **koda değil, ölçüme** aitti. Bu çalışmada
+Kaydedilen altı maddenin dördünde sorun **koda değil, ölçüme** aitti
+(H-1, H-3, H-4, H-6). Bu çalışmada
 güvenliği sağlayan şey RLS politikaları değil, **her iddianın karşı-ölçümle
 sınanmasıydı**: "kapattım" dedikten sonra saldırıyı tekrar denemek, "geri
 alınabilir" dedikten sonra gerçekten geri alıp açığın yeniden açıldığını

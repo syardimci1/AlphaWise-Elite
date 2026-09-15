@@ -91,9 +91,10 @@ BEKLENEN = {
     "docs/denetim_raporlari/VARSAYIM_DEFTERI_coklukullanici.md",
     "docs/denetim_raporlari/HATA_HAFIZASI_coklukullanici.md",
 }
-p = subprocess.run(["git","-C",str(depo),"status","--porcelain"], capture_output=True, text=True)
-tum = {s[3:].strip() for s in p.stdout.splitlines() if s.strip()}
-eksik = BEKLENEN - tum
+# DIKKAT: ilk surum bu dosyalari `git status` ciktisinda ariyordu; commit
+# atildigi anda orada gorunmez oldular ve test yanlislikla FAIL verdi.
+# Dogru olcut "sahnelenmis mi" degil, "deguda VAR mi"dir.
+eksik = {f for f in BEKLENEN if not (depo/f).is_file()}
 sonuc("bu gorevin 5 dosyasi da deguda duruyor", not eksik, f"eksik={eksik or 'yok'}")
 
 # Asil kanit: bu gorev hicbir calistirilabilir kod dosyasina dokunmadi.
@@ -114,7 +115,11 @@ sonuc("goc bir .sql; hicbir Python/TS modulu ice aktarmiyor",
       GOC.suffix == ".sql" and "import" not in kod.lower())
 
 # karar_uret'i barindiran modul(ler) bu gorevde degismedi mi?
-p = subprocess.run(["git","-C",str(depo),"grep","-l","def karar_uret"], capture_output=True, text=True)
+# DIKKAT: bu dosyanin KENDISI "def karar_uret" dizgesini icerdigi icin
+# grep onu da buluyordu ve test kendi degisikligini "canli yol degisti"
+# diye raporluyordu. Test dizini aramadan cikarilir.
+p = subprocess.run(["git","-C",str(depo),"grep","-l","def karar_uret",
+                    "--", ":!db/testler/"], capture_output=True, text=True)
 tasiyici = [s for s in p.stdout.splitlines() if s.strip()]
 print(f"      karar_uret tasiyan dosyalar: {tasiyici or '(git-izlenen dosyada yok)'}")
 if tasiyici:

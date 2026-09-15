@@ -2,7 +2,7 @@
 
 **Tarih:** 15 Eylül 2026
 **Kapsam:** Veri erişim/izolasyon katmanı (Supabase `profiles`, `user_portfolios`)
-**Üretime uygulandı mı:** **HAYIR** — Y7 gereği kullanıcı onayı bekliyor.
+**Üretime uygulandı mı:** **EVET** — 15.09.2026, kullanıcının açık onayıyla (Y7).
 
 > Bu rapordaki her sayı, üretim yetkilerinin **birebir kopyalandığı** izole bir
 > PostgreSQL 17 ortamında, **superuser olmayan** gerçek `anon`/`authenticated`
@@ -119,7 +119,7 @@ yapılan hiçbir ölçüm izolasyonu kanıtlamaz (C4).
 | **Y4** canlı karar yolu | uyuldu | görevin depoya kattığı tek şey iki `.sql` dosyası; `karar_uret` taşıyan dosya değişmedi |
 | **Y5** atomik geri alınabilirlik | uyuldu | tek `BEGIN/COMMIT`; geri alma göçü ACL'i üretime **birebir** döndürüyor |
 | **Y6** geri uyumluluk | uyuldu | göçte hiç DML yok; satır sayıları ve içerik özeti değişmedi; olumlu denetimler geçiyor |
-| **Y7** üretim onayı | **BEKLİYOR** | üretime **hiçbir şey uygulanmadı**; yalnızca salt okuma yapıldı |
+| **Y7** üretim onayı | uyuldu | durup soruldu; **onay alındıktan sonra** uygulandı (bkz. bölüm 7) |
 | **Y8** izolasyon kanıtı | uyuldu | her engel için "denendi → reddedildi" çıktısı yukarıda |
 
 ## 6. Kapsam DIŞI kalan — ürünün asıl çoklu kullanıcı açığı
@@ -145,3 +145,53 @@ sorunu burada değil:
 **Dürüst ifade:** kapalı beta öncesi veri erişim katmanındaki üç somut açık
 kapatıldı ve kanıtlandı; ancak "her kullanıcı yalnızca kendi verisini görür"
 cümlesi **henüz doğru değildir** ve bu görevle doğru hale gelmemiştir.
+
+
+## 7. Üretime uygulama (15.09.2026, onaylı)
+
+Kullanıcı onayından sonra uygulandı. Öncesinde `pg_dump` ile iki tablonun
+şema+veri yedeği alındı ve göçün ihtiyaç duyduğu dört kolonun üretimde
+gerçekten var olduğu doğrulandı.
+
+**Göçün kendi doğrulaması (üretim):** 9/9 hedefte — kapanması gereken yedi
+ölçüt `0`, meşru kullanımı ölçen iki ölçüt `4`.
+
+**Saldırılar üretim üzerinde fiilen denendi** (hepsi `ROLLBACK` içinde):
+
+| rol | deneme | sonuç |
+|---|---|---|
+| `anon` | `TRUNCATE profiles` | `permission denied for table profiles` |
+| `anon` | `TRUNCATE user_portfolios` | `permission denied for table user_portfolios` |
+| `authenticated` | `TRUNCATE profiles` | `permission denied for table profiles` |
+| `anon` | oturumsuz `SELECT` | `permission denied for table profiles` |
+| `anon` | `nextval()` | `permission denied for sequence user_portfolios_id_seq` |
+| `authenticated` (gerçek kullanıcı) | kendi `role`'unu `admin` yapma | `permission denied for table profiles` |
+| `anon` | `VACUUM` / `REINDEX` | `permission denied to vacuum, skipping` / `permission denied` |
+
+**Meşru kullanım bozulmadı** (gerçek üretim kullanıcısıyla): kendi profilini
+görüyor (1), başkasınınkini görmüyor (0), kendi portföyünü görüyor (1), kendi
+adını güncelleyebiliyor (1), yeni portföy ekleyebiliyor (1).
+
+**Y6 sayısal kanıt:** göç öncesi ve sonrası birebir aynı —
+`profiles=2, user_portfolios=1, auth.users=2`, profil içerik özeti
+`583d6743a512781cf63281925aa3f09a`, politika sayısı `4`. Supabase yığınındaki
+11 konteynerin hepsi `healthy` kaldı; PostgREST şema önbelleği tazelendi.
+
+### 7.1 Tesadüfi bulgu — önceden var olan bir üretim hatası
+
+Meşru kullanımı ölçen olumlu denetim, **006 ile ilgisi olmayan** gerçek bir
+hatayı ortaya çıkardı: `user_portfolios_id_seq`, tabloda `id=1` satırı
+dururken `is_called=f` durumundaydı. Yani sayacın üreteceği ilk değer `1`'di
+ve **portföy oluşturmaya çalışan ilk gerçek kullanıcı**
+`duplicate key value violates unique constraint "user_portfolios_pkey"`
+hatası alacaktı.
+
+Neden 006 kaynaklı değil: göç sequence'e yalnızca `REVOKE` uyguluyor, ki bu
+yetki alır, **değer değiştirmez**. Aynı çakışma, 006'dan bağımsız olarak
+izole ortamda da yeniden üretildi (sayaç geride bırakılıp INSERT denenerek).
+
+Neden kendiliğinden kapandı: PostgreSQL'de `nextval` **işlem dışıdır**.
+Başarısız olup geri alınan test INSERT'i bile sayacı ilerletti. Sonuç
+doğrulandı — sayaç artık `max(id)`'nin önünde ve meşru INSERT `id=2` alarak
+çalışıyor. Üretimdeki diğer dört sequence hiç kullanılmamış (`last_value`
+boş), yani aynı hata başka yerde yok.

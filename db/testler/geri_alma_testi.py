@@ -42,8 +42,34 @@ def acl(kap="izole-rls-test"):
 
 print("="*100); print("FAZ 5 - GERI ALMA GOCU GIDIS-DONUS TESTI"); print("="*100)
 
-URETIM, uretim_ham = acl("supabase-db")
-print(f"\n  URETIM parmak izi (dokunulmadi, salt okuma): {URETIM}")
+# -------------------------------------------------------------------
+# GERI ALMANIN HEDEFI: "006 UYGULANMADAN ONCEKI URETIM DURUMU".
+#
+# BU HEDEF NEREDEN ALINIR - iki olcut eskimesi yasandi, ikisi de burada:
+#
+#  1) Ilk surum hedefi CANLI uretimden okuyordu. 006 uretime uygulandigi an
+#     (15.09.2026) uretim artik "006 oncesi" degil "006 sonrasi" durumu
+#     gosterir oldu ve test, saglam calisan geri almayi BOZUK raporladi.
+#  2) Ikinci surum hedefi elle sabitledi, ama information_schema'nin tablo
+#     yetkilerinden TURETTIGI kolon satirlarini (KOL:...) atladi; eksik
+#     taban yine yanlis FAIL uretti.
+#
+# DOGRUSU: taban, uretim degerlerini kodlayan 01_uretim_acl_esitle.sql
+# calistirilarak URETILIR. Bu dongusel degildir - o dosya yetkileri ACIK
+# GRANT'larla kurar, geri alma gocu ise BAGIMSIZ bir yoldan ayni duruma
+# donmek zorundadir. Ikisinin ayni parmak izini vermesi anlamli bir testtir.
+# -------------------------------------------------------------------
+TABAN_SQL = Path(__file__).resolve().parent / "01_uretim_acl_esitle.sql"
+
+_canli, _ = acl("supabase-db")
+uygula(TABAN_SQL)
+URETIM, uretim_ham = acl()
+print(f"\n  006 ONCESI taban parmak izi (01_uretim_acl_esitle.sql'den): {URETIM}")
+print(f"  canli uretimin SU ANKI parmak izi                         : {_canli}"
+      f"  ({'006 UYGULANMIS' if _canli != URETIM else '006 uygulanmamis'})")
+
+# Testin geri kalani 006 UYGULANMIS durumdan baslamali.
+uygula(ILERI)
 
 # --- su an 006 UYGULANMIS durumda ---
 KAPALI, _ = acl()

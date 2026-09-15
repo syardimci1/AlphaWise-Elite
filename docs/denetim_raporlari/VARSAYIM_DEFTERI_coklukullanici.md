@@ -127,4 +127,7 @@ sağlamaz, ama Supabase Studio ve yönetim araçlarını bozabilir. Bu bir
 
 `profiles` = 2 satır, `user_portfolios` = 1 satır, `auth.users` = 2 satır.
 Y6'nın "mevcut 2 profil kayıp yaşamaz" koşulunun sayısal karşılığı budur.
-Göç uygulanırsa bu üç sayı **değişmemelidir**.
+
+**SONUÇ (15.09.2026, göç uygulandıktan sonra ölçüldü):** üç sayı da aynı
+kaldı ve profil içerik özeti (`583d6743a512781cf63281925aa3f09a`) değişmedi.
+Varsayım doğrulandı, artık bir varsayım değil bir ölçümdür.
