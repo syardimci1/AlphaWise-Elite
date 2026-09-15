@@ -5,6 +5,8 @@ import { aramaAkisiBaslat, sembolNormalize } from '../../lib/arama-akisi'
 import BildirimMerkezi from '../../../components/BildirimMerkezi'
 import KarsilastirmaTablosu from '../../../components/KarsilastirmaTablosu'
 import PortfoyGrafigi from '../../../components/PortfoyGrafigi'
+import PriceChart from '../../../components/PriceChart'
+import EventOverlayLayer from '../../../components/EventOverlayLayer'
 import { useRouter } from 'next/navigation'
 import { BolgeKarti, DurumRozeti, SinyalKutusu, Satir, UstBar, AramaFormu }
   from '../../../components/DashboardBilesenleri'
@@ -355,6 +357,16 @@ function useSinyal(url: string | null) {
 
 function PiyasaSinyalleri({ ticker }: { ticker: string }) {
   const t = ticker ? ticker.toUpperCase() : ''
+  // Koyfin olay katmani (madde: grafik olay katmani) - PriceChart daha
+  // once HICBIR sayfaya bagli degildi (bkz. frontend/contracts/FAZ1_KANIT.md).
+  // chart/series, PriceChart'in candle verisini yukledikten SONRA onHazir
+  // ile buraya bildirilir; EventOverlayLayer o ana kadar render edilmez.
+  const [grafikHazir, setGrafikHazir] = useState<{ chart: any; series: any } | null>(null)
+  // Ticker degisince ESKI chart/series referansi ANINDA birakilir - PriceChart
+  // kendi eski chart'ini kaldirirken (chart.remove()) EventOverlayLayer'in
+  // KALDIRILMIS bir seri uzerinde calismasini onler (yeni onHazir gelene
+  // kadar katman hic render edilmez).
+  useEffect(() => { setGrafikHazir(null) }, [t])
   const sec = useSinyal(t ? `/api/sec-edgar-13f/${t}` : null)
   const kurum = useSinyal(t ? `/api/institution-filter/${t}` : null)
   const finra = useSinyal(t ? `/api/finra-darkpool/${t}` : null)
@@ -385,6 +397,19 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         tavsiye degildir; her sinyalin kendi sinirlari asagida belirtilmistir.
         {!t && ' Hisseye bagli sinyaller icin yukaridan bir hisse kodu arayin.'}
       </p>
+
+      {/* ---------- FIYAT GRAFIGI + OLAY KATMANI (koyfin_event_overlay) ---------- */}
+      {t && (
+        <div style={{ background: '#fff', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          <PriceChart
+            ticker={t}
+            onHazir={(chart, series) => setGrafikHazir({ chart, series })}
+          />
+          {grafikHazir && (
+            <EventOverlayLayer symbol={t} chart={grafikHazir.chart} series={grafikHazir.series} />
+          )}
+        </div>
+      )}
 
       {/* ---------- SEC EDGAR 13F ---------- */}
       {t && (
@@ -705,11 +730,11 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         <SinyalKutusu
           baslik="Qlib Model Skoru"
           aciklama="LightGBM/Alpha158 modelinin hisse icin urettigi ham skor."
-          rozet="dusuk tahmin gucu"
+          rozet="karar zincirine bagli degil (lambda=0)"
           rozetRenk="#fb923c"
           durum={qlibSkor.durum}
           hata={qlibSkor.hata}
-          uyari="Modelin son egitimindeki gunluk kesitsel IC degeri 0.0123 olculdu; egitim betiginin kendi olcutune gore makul kabul edilen aralik 0.02-0.05'tir. Yani skorun tahmin gucu su an dusuktur ve tek basina bir sonuc cikarilmamalidir."
+          uyari="Bu skor karar zincirine BAGLI DEGILDIR (lambda = 0). 23.08.2026 kalibrasyonunda (469.456 ornek-disi gozlem) gunluk kesitsel IC = 0.04223, %95 bootstrap guven araligi [0.02245, 0.06764] olculdu; yani IC istatistiksel olarak sifirdan farklidir. Buna ragmen lambda 0'da tutuldu, cunku (a) hisse SIRALAMASI anlamli degil - Rank IC 0.01501 ve %95 guven araligi [-0.00063, 0.03077] sifiri iciyor, (b) sistemin kendi olcutu olan Brier iyilesmesi +%0.44 ile gereken +%2 esiginin altinda kaldi. Tek basina bir sonuc cikarilmamalidir."
         >
           {qlibSkor.veri && (
             <>

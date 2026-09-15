@@ -87,3 +87,35 @@ kanıt dosyasında (Playwright ekran görüntüsü).
 **Tekrar riski:** Düşük — artık TÜM veri kaynakları (5/5) aynı
 `servisProxy` kalıbını kullanıyor, tutarlılık koddan okunabilir hale
 geldi.
+
+## [2026-09-15T00:00] H-003 (ortam/araç tuzağı, kod hatası DEĞİL)
+
+**Belirti:** `npx next dev` VE `npx next build` çalıştırılırken ikisi de
+`frontend/tsconfig.json`'ı SESSİZCE "yeniden yapılandırdı" (izinsiz
+biçimlendirme + yeni alanlar ekledi) ve `frontend/next-env.d.ts`
+oluşturdu — ikisi de git'te DEĞİŞİKLİK olarak görünüyordu. Ayrıca ilk
+`next build` denemesi, projeyle TAMAMEN İLGİSİZ, önceden var olan BOŞ
+ve İZLENMEYEN bir `src/app/login/` dizini yüzünden
+`PageNotFoundError`/`_document` hatasıyla çöktü.
+
+**Kök neden:** Next.js 15'in kendi geliştirici deneyimi davranışı
+(tsconfig otomatik güncelleme) + App Router'ın boş bir route dizinini
+derleme sırasında bozuk sayması. Kodumla ilgisi yok, ama fark
+edilmezse yanlışlıkla commit'e karışabilirdi.
+
+**Düzeltme (bu fazda uygulanan disiplin, kalıcı kod değişikliği
+DEĞİL):** Her `next dev`/`next build` çalıştırmasından SONRA
+`git status`/`git diff` ile `tsconfig.json` kontrol edildi, değişmişse
+`git checkout --` ile geri alındı, `next-env.d.ts` silindi. Boş
+`src/app/login/` dizini (git'te hiç izlenmiyordu, içi TAMAMEN boştu)
+kaldırıldı — bu depo geçmişinde hiç var olmamış bir dosya değil,
+sadece BOŞ bir klasördü.
+
+**Regresyon testi id:** yok (araç davranışı, kod değil). Önlem:
+gelecekte bu frontend'de `next dev`/`next build` çalıştıran her oturum
+ÖNCESİ/SONRASI `git status frontend/tsconfig.json` kontrolünü
+alışkanlık haline getirmeli.
+
+**Tekrar riski:** Yüksek (her `next dev`/`next build` çalıştırmasında
+tekrar olur) ama ZARARSIZ — commit ÖNCESİ fark edilebilir bir
+git-diff'tir, sessiz veri kaybı riski yok.
