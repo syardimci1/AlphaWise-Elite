@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { createSeriesMarkers, IChartApi, ISeriesApi, ISeriesMarkersPluginApi, Time } from 'lightweight-charts'
 import {
   congressOlaylari, insiderOlaylari, darkPoolOlaylari, onucFOlaylari,
-  KoyfinOlay, KoyfinOlayTipi,
+  olaylariTekillestir, KoyfinOlay, KoyfinOlayTipi,
 } from '../src/lib/koyfin-olaylar'
 import { olaylardanMarkerUret, markerlariKumele } from '../src/lib/koyfin-marker'
 import { utcMsToYerelEtiket } from '../src/lib/koyfin-zaman'
@@ -83,12 +83,12 @@ export default function EventOverlayLayer({ symbol, chart, series }: Props) {
       gec(`/api/sec-edgar-13f/${symbol}`),
     ]).then(([congressYanit, insiderYanit, darkPoolYanit, onucFYanit]) => {
       if (iptal) return
-      setOlaylar([
+      setOlaylar(olaylariTekillestir([
         ...congressOlaylari(symbol, congressYanit?.trades || []),
         ...insiderOlaylari(symbol, insiderYanit?.kayitlar || []),
         ...darkPoolOlaylari(symbol, darkPoolYanit),
         ...onucFOlaylari(symbol, onucFYanit?.sahipler || []),
-      ])
+      ]))
     })
     return () => { iptal = true }
   }, [bayrakAcik, symbol])

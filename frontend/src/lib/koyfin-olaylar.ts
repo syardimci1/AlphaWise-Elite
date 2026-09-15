@@ -87,6 +87,19 @@ export function darkPoolOlaylari(symbol: string, regshoYaniti: any): KoyfinOlay[
     }))
 }
 
+/** Idempotentlik (C1): ayni id'li olay birden fazla kez gelirse (ayni
+ * kaynagin iki kez cekilmesi, onbellek+canli cakismasi vb.) TEK kopya
+ * kalir. markerlariKumele() bunun YERINE GECMEZ - o gun-bazli GORSEL
+ * kumelemedir, bu ise KIMLIK-bazli dedup'tir; ikisi farkli sorunlar
+ * cozer ve bu yuzden AYRI adimlardir (once tekillestir, sonra kumele). */
+export function olaylariTekillestir(olaylar: KoyfinOlay[]): KoyfinOlay[] {
+  const gorulen = new Map<string, KoyfinOlay>()
+  for (const o of olaylar) {
+    if (!gorulen.has(o.id)) gorulen.set(o.id, o)
+  }
+  return [...gorulen.values()]
+}
+
 export function onucFOlaylari(symbol: string, sahipler: any[]): KoyfinOlay[] {
   return (sahipler || []).map((s) => ({
     id: olayId('13F', symbol, s.kurum_cik, s.accession),
