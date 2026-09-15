@@ -97,6 +97,19 @@ test('OLAY/IDEMPOTENTLIK: ayni girdi ayni id uretir, tekillestirme tek kopya bir
   assert.equal(tekil.length, 1)
 })
 
+test('OLAY/GECERSIZ-SEMA: bozuk TEK kayit dusurulur, AYNI parti icindeki GECERLI kayitlar etkilenmez', () => {
+  const gecerli = { ...GERCEK_CONGRESS }
+  const bozuk = { member: 'Biri', chamber: 'House', ticker: 'NVDA', transaction_type: 'Sale', /* transaction_date EKSIK -> gunStringindenUtcMs firlatir */ disclosure_date: '2026-09-11', amount_range: '$1' }
+  const orijinalWarn = console.warn
+  let uyariGeldiMi = false
+  console.warn = () => { uyariGeldiMi = true }
+  const sonuc = congressOlaylari('NVDA', [gecerli, bozuk as any])
+  console.warn = orijinalWarn
+  assert.equal(sonuc.length, 1) // yalnizca gecerli olan hayatta kaldi
+  assert.ok(sonuc[0].ozet.includes('Cisneros'))
+  assert.equal(uyariGeldiMi, true) // sessiz yutma YOK - loglandi
+})
+
 test('OLAY/FARKLI-OLAY-AYNI-GUN: farkli iki olay YANLISLIKLA tekillesmez', () => {
   const congressOlay = congressOlaylari('NVDA', [GERCEK_CONGRESS])[0]
   const insiderOlay = insiderOlaylari('NVDA', [GERCEK_INSIDER_HIBE])[0]

@@ -21,6 +21,23 @@ export interface KoyfinOlay {
   kaynak_zamani_utc: number
 }
 
+/** Gecersiz sema dayanikliligi (FAZ 4 test 11): tek bir bozuk kayit (orn.
+ * eksik/bozuk tarih alani) map() icinde firlatirsa TUM diziyi goturur.
+ * Bu yardimci HER kaydi ayri ayri dener; basarisiz olan DUSURULUR ve
+ * console.warn ile ORNEGIYLE loglanir (sessiz yutma YOK) - digerleri
+ * ETKILENMEZ. */
+function guvenliMap<T>(kaynakAdi: string, kayitlar: T[], donustur: (k: T) => KoyfinOlay): KoyfinOlay[] {
+  const sonuc: KoyfinOlay[] = []
+  for (const kayit of kayitlar) {
+    try {
+      sonuc.push(donustur(kayit))
+    } catch (e) {
+      console.warn(`[koyfin] ${kaynakAdi}: gecersiz kayit dusuruldu -`, e, kayit)
+    }
+  }
+  return sonuc
+}
+
 /** Deterministik id: ayni girdi HER ZAMAN ayni id'yi uretir (C1: idempotentlik). */
 function olayId(...parcalar: (string | number)[]): string {
   const metin = parcalar.join('|')
@@ -32,7 +49,7 @@ function olayId(...parcalar: (string | number)[]): string {
 }
 
 export function congressOlaylari(symbol: string, trades: any[]): KoyfinOlay[] {
-  return (trades || []).map((t) => ({
+  return guvenliMap('CONGRESS', trades || [], (t) => ({
     id: olayId('CONGRESS', symbol, t.transaction_date, t.member, t.transaction_type, t.amount_range),
     tip: 'CONGRESS' as const,
     symbol,
@@ -47,7 +64,7 @@ export function congressOlaylari(symbol: string, trades: any[]): KoyfinOlay[] {
 }
 
 export function insiderOlaylari(symbol: string, kayitlar: any[]): KoyfinOlay[] {
-  return (kayitlar || []).map((k) => ({
+  return guvenliMap('INSIDER', kayitlar || [], (k) => ({
     id: olayId('INSIDER', symbol, k.kisi, k.islem_tarihi, k.adet, k.islem_fiyati),
     tip: 'INSIDER' as const,
     symbol,
@@ -71,9 +88,8 @@ const DARK_POOL_ESIK_PUAN = 10
 export function darkPoolOlaylari(symbol: string, regshoYaniti: any): KoyfinOlay[] {
   const gunler: any[] = regshoYaniti?.gunler || []
   const ortalama: number = regshoYaniti?.ortalama_kisa_hacim_orani_yuzde ?? 0
-  return gunler
-    .filter((g) => g.kisa_hacim_orani_yuzde - ortalama >= DARK_POOL_ESIK_PUAN)
-    .map((g) => ({
+  const esikUstu = gunler.filter((g) => (g?.kisa_hacim_orani_yuzde ?? -Infinity) - ortalama >= DARK_POOL_ESIK_PUAN)
+  return guvenliMap('DARK_POOL', esikUstu, (g) => ({
       id: olayId('DARK_POOL', symbol, g.tarih),
       tip: 'DARK_POOL' as const,
       symbol,
@@ -101,7 +117,7 @@ export function olaylariTekillestir(olaylar: KoyfinOlay[]): KoyfinOlay[] {
 }
 
 export function onucFOlaylari(symbol: string, sahipler: any[]): KoyfinOlay[] {
-  return (sahipler || []).map((s) => ({
+  return guvenliMap('13F', sahipler || [], (s) => ({
     id: olayId('13F', symbol, s.kurum_cik, s.accession),
     tip: '13F' as const,
     symbol,

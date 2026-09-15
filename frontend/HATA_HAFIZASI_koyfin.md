@@ -119,3 +119,32 @@ alışkanlık haline getirmeli.
 **Tekrar riski:** Yüksek (her `next dev`/`next build` çalıştırmasında
 tekrar olur) ama ZARARSIZ — commit ÖNCESİ fark edilebilir bir
 git-diff'tir, sessiz veri kaybı riski yok.
+
+## [2026-09-15T00:00] H-004
+
+**Belirti:** FAZ 4 kontrol listesi taranırken ("geçersiz olay
+şeması→düşürülür+loglanır, çökme yok" maddesi) fark edildi: 4 normalize
+fonksiyonunun (`congressOlaylari` vb.) hiçbiri kayıt-bazlı hata
+yönetimi yapmıyordu.
+
+**Kök neden:** `.map((t) => ({...gunStringindenUtcMs(t.transaction_date)...}))`
+deseninde, TEK bir kaydın eksik/bozuk bir tarih alanı taşıması
+`gunStringindenUtcMs`'in `.split('-')` çağrısında (undefined üzerinde)
+İSTİSNA fırlatmasına yol açar; `.map()` içinde fırlatılan istisna TÜM
+diziyi keser — yani bir API'nin dönebileceği 50 kayıttan BİRİ bozuksa,
+kalan 49 GEÇERLİ kayıt da sessizce kaybolurdu.
+
+**Düzeltme:** `guvenliMap()` eklendi (`koyfin-olaylar.ts`) - her kaydı
+ayrı `try/catch` ile dener, başarısız olanı `console.warn` ile
+(kaydın kendisiyle birlikte) loglayıp DÜŞÜRÜR, kalan kayıtlar
+ETKİLENMEZ. 4 normalize fonksiyonu da buna taşındı. Dark pool'un
+`filter()` adımı da aynı riski taşıdığı için (`g.kisa_hacim_orani_yuzde`
+erişimi) `g?.kisa_hacim_orani_yuzde ?? -Infinity` ile korumaya alındı.
+
+**Regresyon testi id:** `OLAY/GECERSIZ-SEMA` (tests/koyfin/olaylar.test.ts) -
+bozuk+geçerli karışık bir parti verilir, yalnızca geçerli olanın
+hayatta kaldığı VE `console.warn`'ün çağrıldığı (sessiz yutma yok)
+doğrulanır.
+
+**Tekrar riski:** Düşük — desen artık merkezi bir yardımcıda, yeni bir
+kaynak eklenirse aynı yardımcı yeniden kullanılabilir.
