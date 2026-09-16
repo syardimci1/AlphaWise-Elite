@@ -1,0 +1,50 @@
+{
+  "/opt/alphawise/commercial/AlphaWise-Elite/taa/src/main.py": {
+    "kural": "Y1",
+    "satir": 296,
+    "sha256": "accc62c256f716f843a9ab72d43d021a19279a4954c428d6e4dc48e60200deb0",
+    "ast_sha256": "3b6d6b0cd79313b1332494aa697627e012681fbcb89443ef9092616ae5ad43a6"
+  },
+  "/opt/alphawise/commercial/AlphaWise-Elite/maa/src/main.py": {
+    "kural": "Y1",
+    "satir": 1149,
+    "sha256": "6e9f429d4e94713161f169f4a2e7259754ca6800d86a5139a8177963babca32a",
+    "ast_sha256": "9035bada0ca7286be82cb2e5c1f0cba6c1659ae623af83526e170f7f88ea6eb4"
+  },
+  "/opt/alphawise/godmode-paper-trading-service/src/main.py": {
+    "kural": "Y1",
+    "satir": 1811,
+    "sha256": "62fd16df1be02c8f8f4429912ef30dde0de4ddf7107557fa3e7bfc81b8ad7d94",
+    "ast_sha256": "dbd47e6f49465558ff5fdcde4231cb83de4aab32bfbef6540794f9ddf97d6403"
+  },
+  "/opt/alphawise/commercial/AlphaWise-Elite/maa/src/cascade.py": {
+    "kural": "CLAUDE.md",
+    "satir": 257,
+    "sha256": "1d0c151ef7c1a7dcccbd7f69d81bfcb9f6763aafe94d31e4d290a26e1dc7a779",
+    "ast_sha256": "b658764e22c57b3c5e0a033dcd51225b8e5bb590ea0415e8e1590b6a32b431cd"
+  },
+  "/opt/alphawise/commercial/AlphaWise-Elite/maa/src/llmquant_client.py": {
+    "kural": "CLAUDE.md",
+    "satir": 153,
+    "sha256": "29ce43b29bed4e19464193cfa449f463a80b5ac322aa0e9a05997eefbbccde9b",
+    "ast_sha256": "4a7e53670be1b63cf5303b2a98294a597be072d02239bd95a521f1199bef5717"
+  },
+  "/opt/alphawise/godmode-paper-trading-service/src/strateji.py": {
+    "kural": "depo-manifesti(blob)",
+    "satir": 655,
+    "sha256": "766290405cb8954e07777a45fc3439c0278990000f8f94146b6656ecd1b4f478",
+    "ast_sha256": "c1824e08021f4daca4f53d3f0e13db7c1c7ccb62faa85f3346eb62c6ab5abf8a"
+  },
+  "/opt/alphawise/godmode-paper-trading-service/src/risk.py": {
+    "kural": "depo-manifesti(blob)",
+    "satir": 304,
+    "sha256": "a623bcdfecb15e1da280fe1cb781e8d9aeb3855944aeb56ca1c84a7b93449e1f",
+    "ast_sha256": "a7a2a847a8771cbf5ad8d0df4739e33d24c8c9cbebd64e4455696eec4dcaf691"
+  },
+  "/opt/alphawise/godmode-paper-trading-service/src/simulasyon.py": {
+    "kural": "depo-manifesti(AST)",
+    "satir": 834,
+    "sha256": "d96b226718e5da86097b819ac278a513f6060cc2647581c4c7e0b6a775f8f2ee",
+    "ast_sha256": "75a995186f156dfbebab32bdbbdeb601a1e3ea8b9c0f3e3b64da2b11400c7103"
+  }
+}
