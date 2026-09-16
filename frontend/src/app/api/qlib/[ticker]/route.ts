@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // Qlib — LightGBM/Alpha158 modelinin urettigi gunluk skor.
 //
@@ -8,7 +8,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // alani skorun hangi gune ait oldugunu soyler ve dashboard'da gosterilir —
 // boylece bayat bir skor "guncel" saniilmaz.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -20,5 +20,6 @@ export async function GET(
     yol: `/predict/${encodeURIComponent(t)}`,
     zamanAsimiMs: 30_000,
     servisAdi: 'Qlib model skoru',
+    kimlik: istekKimligi(req),
   })
 }

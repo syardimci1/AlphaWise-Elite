@@ -127,9 +127,61 @@ testlerin yeşil olduğunu ayrı ayrı ölçmek** ikisini de erken yakaladı.
 
 ---
 
-## Ortak örüntü (H-1, H-3, H-4)
+## H-5 — Doğrulama sırasında tsconfig'i geri alıp kendi derlememi bozdum
 
-Dördün üçünde sorun **koda değil, araca/ölçüme** aitti — bu, önceki
+**Faz:** 2 · **Tekrar:** 1
+
+**Ne oldu.** İ-2'yi doğrulamak için `npx next build` çalıştırdım. Build
+başarısız oldu ve **her seferinde farklı bir rotada**
+(`/api/config/koyfin-flag`, sonra `/api/finra-darkpool-regsho`, sonra
+`/_not-found`). "Compiled successfully" diyip sonra
+`PageNotFoundError: Cannot find module for page` veriyordu.
+
+Değişikliklerimin kırdığı sonucuna vardım ve bunu izole etmek için
+üç ayrı deneme daha yaptım — biri çalışma ağacımdaki 16 rota
+değişikliğini kazara **geri aldı** (`git checkout -- frontend/src/`,
+çünkü ADIM 0+1'i zaten commit'lemiştim, yani HEAD benim kodumu içeriyordu).
+
+**Kök neden.** `next build`, `tsconfig.json`'ın `include` listesine
+`.next/types/**/*.ts` ekliyor. Ben her denemeden sonra "istenmeyen
+değişiklik" sanıp `git checkout -- frontend/tsconfig.json` ile geri
+alıyordum. Sonraki derleme, o girdiye ihtiyaç duyan `.next` tip
+dosyalarıyla tutarsız bir tsconfig görüp çöküyordu. Yani **başarısızlığı
+ben üretiyordum.**
+
+**Düzeltme.** tsconfig'e dokunmadan tek bir temiz tur çalıştırıldı:
+`✓ Compiled successfully` + `✓ Generating static pages (13/13)`.
+İ-2 derlemeyi kırmıyor.
+
+**Ders.** Bir aracın kendi ürettiği dosyayı "istenmeyen değişiklik" diye
+geri almadan önce, o dosyanın aracın çalışması için **gerekli** olup
+olmadığı sorulmalı. Ayrıca: hata mesajı her denemede değişiyorsa bu
+genellikle kodun değil, **ortamın** belirsiz olduğunun işaretidir.
+
+---
+
+## BULGU (hata değil) — deponun `tsconfig.json`'ı yerel `next build` ile uyumsuz
+
+Ölçüldü: deponun commit'li `tsconfig.json`'ında `include` listesinde
+`.next/types/**/*.ts` **yok** ve o hâliyle temiz bir `next build`
+`/_not-found` üzerinde **başarısız oluyor**. `next build` her çalıştığında
+bu girdiyi kendisi ekliyor.
+
+Docker'da fark edilmemesinin nedeni ölçüldü: `frontend/Dockerfile`
+`RUN npm run build` çalıştırıyor ve konteynerdeki `tsconfig.json`'da
+girdi **VAR** (`include: ['**/*.ts','**/*.tsx','next-env.d.ts','.next/types/**/*.ts']`,
+`plugins: [{name:'next'}]`). Yani değişiklik imaj katmanında kalıyor,
+depoya hiç dönmüyor.
+
+**Bu görevde DEĞİŞTİRİLMEDİ** (kapsam dışı, başkasının kararı). Ama
+yerel derleme yapacak olan, ya `next build`'in tsconfig'i değiştirmesine
+izin vermeli ya da öncesinde `rm -rf .next` yapmalıdır.
+
+---
+
+## Ortak örüntü (H-1, H-3, H-4, H-5)
+
+Beşin dördünde sorun **koda değil, araca/ölçüme** aitti — bu, önceki
 görevde dört kez tekrarlanan örüntünün aynısı. Bu görevde alınan yapısal
 karşı önlem: her ölçüm aracının kendisi **mutasyon testiyle** sınanıyor
 (AST hash'i 4 mutasyonla, silinme denetimi 1 mutasyonla doğrulandı).

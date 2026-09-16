@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // SEC EDGAR 13F — kurumsal pozisyonlar, SEC'in resmi acik verisinden.
 // API anahtari gerektirmez, ucretsizdir. Adres yalnizca sunucuda tutulur.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -18,5 +18,6 @@ export async function GET(
     yol: `/holders/${encodeURIComponent(t)}?top=8`,
     zamanAsimiMs: 120_000,
     servisAdi: 'SEC EDGAR 13F',
+    kimlik: istekKimligi(req),
   })
 }

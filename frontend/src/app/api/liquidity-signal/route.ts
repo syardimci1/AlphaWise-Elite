@@ -1,4 +1,5 @@
-import { servisProxy } from '@/lib/servis-proxy'
+import { NextRequest } from 'next/server'
+import { istekKimligi, servisProxy } from '@/lib/servis-proxy'
 
 // Liquidity Signal — Fed likidite rejimi (WALCL / TGA / RRP).
 //
@@ -11,11 +12,12 @@ import { servisProxy } from '@/lib/servis-proxy'
 // asmis (en iyi olculen beceri +1.63, en dusuk p=0.077). Servis bu yuzden
 // yon iddiasi tasiyan kodlari (EKLE / DIKKAT ET) URETMEZ. Dashboard bu
 // uyariyi one cikararak gosterir — sinyal yalnizca baglam/izleme amaclidir.
-export async function GET() {
+export async function GET(req: NextRequest) {
   return servisProxy({
     taban: process.env.LIQUIDITY_SIGNAL_URL || 'http://alphawise-liquidity-signal:8000',
     yol: '/regime',
     zamanAsimiMs: 45_000,
     servisAdi: 'Likidite Rejimi',
+    kimlik: istekKimligi(req),
   })
 }

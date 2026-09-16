@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // Gamma Exposure servisi — iki ayri gostergesi var:
 //   /gex/{ticker}      : FlashAlpha opsiyon GEX verisi
@@ -15,7 +15,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // tukenirdi. Bu yuzden bu route DPKE'yi dondurur; GEX'in ucretsiz planda
 // kapali oldugu arayuzde ACIKCA yazilir.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -27,5 +27,6 @@ export async function GET(
     yol: `/dix-like/${encodeURIComponent(t)}`,
     zamanAsimiMs: 60_000,
     servisAdi: 'Dark Pool Katilim Endeksi',
+    kimlik: istekKimligi(req),
   })
 }

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // Bes eksenli temel skor sentezi (Madde 23).
 //
@@ -29,5 +29,6 @@ export async function GET(
     yol: `/skor/${encodeURIComponent(t)}` + (mercek ? `?mercek=${mercek}` : ''),
     zamanAsimiMs: 90_000,
     servisAdi: 'Bes eksenli skor sentezi',
+    kimlik: istekKimligi(req),
   })
 }

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy } from '@/lib/servis-proxy'
 
 // FRED Makro Servisi (8270) — makro yayin takvimi + gostergeler.
 //
@@ -13,11 +13,12 @@ import { servisProxy } from '@/lib/servis-proxy'
 //
 // ZAMAN ASIMI: soguk cagride 6 FRED serisi + takvim cekiliyor; sicak
 // cagri Redis onbelleginden (gosterge 6 sa, takvim 12 sa) donuyor.
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   return servisProxy({
     taban: process.env.FRED_MACRO_URL || 'http://alphawise-fred-macro:8000',
     yol: '/ozet',
     zamanAsimiMs: 90_000,
     servisAdi: 'FRED Makro Takvimi',
+    kimlik: istekKimligi(req),
   })
 }

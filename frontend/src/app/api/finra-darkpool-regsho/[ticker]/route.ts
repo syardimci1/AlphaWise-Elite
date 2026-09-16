@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // FINRA Reg SHO gunluk kisa-hacim orani — /api/finra-darkpool ile AYNI
 // servise (finra-darkpool-service) gider, farkli bir ucuna (/regsho).
@@ -9,7 +9,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // DEGIL — mevcut ucretsiz, anahtarsiz servisin ikinci bir ucu
 // (frontend/VARSAYIM_DEFTERI_koyfin.md V-007, coz).
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -21,5 +21,6 @@ export async function GET(
     yol: `/regsho/${encodeURIComponent(t)}`,
     zamanAsimiMs: 60_000,
     servisAdi: 'FINRA Reg SHO',
+    kimlik: istekKimligi(req),
   })
 }
