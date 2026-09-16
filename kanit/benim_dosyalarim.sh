@@ -22,6 +22,24 @@ else
 fi
 
 echo
+echo "=== 2b) Taban cizgisindeki dosyalar hala DURUYOR mu ==="
+# 16.09.2026'DA OGRENILEN DERS: bolum 2 yalnizca BES cakisan dosyayi hash'liyordu.
+# Taban cizgisindeki diger 49 girdiden birinin SILINMESI fark edilmiyordu - ve
+# gercekten oldu: frontend/package-lock.json (baskasinin izlenmeyen dosyasi)
+# bir temizlik sirasinda silindi ve bu betik "PASS" demeye devam etti.
+# Artik taban cizgisindeki her IZLENMEYEN (??) dosyanin varligi dogrulaniyor.
+eksik=0
+while read -r durum yolu; do
+  [ "$durum" = "??" ] || continue
+  # Dizin girdileri (sonu / ile biten) icin dizin varligina bakilir.
+  if [ ! -e "$yolu" ]; then
+    echo "  *** EKSIK *** $yolu  (taban cizgisinde vardi, artik YOK)"
+    eksik=$((eksik+1))
+  fi
+done < <(sed 's/^ *//' "$D/faz0_baskasinin_isi_taban.txt")
+[ "$eksik" = "0" ] && echo "  PASS  taban cizgisindeki izlenmeyen dosyalarin hepsi yerinde"
+
+echo
 echo "=== 3) Korunan dosyalar (SHA-256 + AST) ==="
 python3 - "$D/faz0_korunan_hashler.json" <<'PY'
 import ast, hashlib, json, sys
