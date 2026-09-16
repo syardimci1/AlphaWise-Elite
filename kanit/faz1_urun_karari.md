@@ -235,3 +235,60 @@ ve deponun kendi aracı `src/main.py` için **aynı** özeti üretti (`dbd47e6f4
 Pratik sonuç: `strateji.py` ve `risk.py` **tek bayt** bile değişemez. Risk tavanı
 mantığı `risk.py`'de yaşıyorsa, kullanıcı başına kota fikri oraya da dokunamaz —
 bu Faz 2'de ölçülecek.
+
+---
+
+## KARARLAR (kullanıcı, 16.09.2026) — FAZ 1 ÇIKIŞ KAPISI ✅
+
+### K1 — Kapsam: **A, kenar-öncelikli**
+
+Defter **tek sistem hesabı olarak kalır**. Kullanıcı bazlı bölme yapılmaz,
+dolayısıyla R-1 (mutabakat kapısı + risk tavanı kırılması) **hiç doğmaz** ve
+kullanıcı başına Alpaca hesabı gerekmez.
+
+Yapılacak: kimlik hattını kurmak ve **ölçülen** çapraz-kullanıcı sızıntılarını
+kapatmak. **Hiçbir korunan dosyaya dokunulmaz.**
+
+| # | iş | dosya | korumalı mı |
+|---|---|---|---|
+| İ-1 | `kullaniciId`'yi aşağı taşı | `frontend/src/middleware.ts` | ❌ |
+| İ-2 | proxy başlık taşısın | `frontend/src/lib/servis-proxy.ts` | ❌ |
+| İ-3 | hız sınırı kovası kullanıcı bazlı | `frontend/src/middleware.ts:135-147` | ❌ |
+| İ-4 | MAA proxy önbelleği/havuzu kullanıcı bazlı | `frontend/src/app/api/maa/[...yol]/route.ts:78,100,167` | ❌ |
+| İ-5 | cognee memory sızıntısını kapat | aynı dosya + `middleware.ts:114` beyaz liste | ❌ |
+| İ-6 | raporlar dizini kullanıcı bazlı | `frontend/src/app/api/raporlar/**` | ❌ |
+| İ-7 | kota sayacı kullanıcı bazlı | `gamma-exposure-service/main.py:117` | ❌ |
+| İ-8 | kullanıcı görüntüleme kaydı (RLS'li) | `db/migrations/007_*` (yeni) | ❌ |
+
+**Kapsam dışı (bilinçli, kayıt altında):** defterin kullanıcıya bölünmesi,
+kullanıcı başına Alpaca hesabı, `godmode/execution` emir yüzeyinin kiracılığı,
+`/oz-iyilestirme/*` küresel ayar uçları, bildirim alıcı kavramı. Bunlar
+**R-1, R-7, R-9, R-13** olarak risk defterinde açık kalıyor.
+
+### K2 — Y9 sahiplik: **A, sistem kullanıcısına ata**
+
+Kapsam A seçildiği için defter bölünmüyor; bu karar **şu an uygulanmıyor** ama
+kural olarak kayda geçiyor: defter ileride bölünürse mevcut 13 AL kararı ve
+8 MSFT alımı **sistem kullanıcısına** atanacak, ilk kayıt olan kullanıcıya değil.
+Gerekçe: sabit bir sistem kimliği, "ilk gelen" kuralından daha öngörülebilir ve
+ileride kullanıcı silinse bile veri sahipsiz kalmaz.
+
+### K3 — Auth: **Hibrit (Supabase + anahtar→kiracı)**
+
+- **Kenar:** mevcut Supabase auth genişletilir. `middleware.ts` zaten JWT
+  doğrulayıp `kullaniciId` üretiyor (`oturum.ts:116`); tek eksik onu aşağı taşımak.
+  İkinci bir auth katmanı **yaratılmıyor**.
+- **İç çağıranlar:** cron, `hedef-planlayici` ve `paper-izleme` statik anahtar
+  taşımaya devam eder; anahtar→kiracı eşlemesiyle **"sistem kiracısı"** olarak
+  etiketlenir. Böylece otomasyon kırılmaz (ölçüldü: bugünkü üretim trafiğinin
+  %100'ü JWT'siz).
+- JWT'siz trafik **fail-closed değil**, açıkça `sistem` kiracısına düşer — ve bu
+  etiket loglanabilir, yani "kim çağırdı" sorusu artık cevaplanabilir hâle gelir.
+
+### Çözülen blokaj: R-8 (kullanıcı sağlama)
+
+Eleştirmen "kullanıcı B yaratılamıyor" demişti. Ölçüldü: Supabase'de **iki
+kullanıcı da giriş yapabilir durumda** (parola var, e-posta onaylı, banlı değil)
+ve `GOTRUE_DISABLE_SIGNUP=false`. FAZ 3'ün "2 gerçek kullanıcı" şartı bugün
+karşılanabilir: `selcuk@alphawise.test` (admin) ve `partner@alphawise.test` (partner).
+Eksik olan yalnızca self-servis kayıt **arayüzü** — ürün boşluğu, FAZ 3 blokajı değil.
