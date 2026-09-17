@@ -411,6 +411,11 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         </div>
       )}
 
+      <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600,
+        letterSpacing: '0.05em', textTransform: 'uppercase', margin: '16px 0 4px' }}>
+        Kurumsal Pozisyonlar
+      </p>
+
       {/* ---------- SEC EDGAR 13F ---------- */}
       {t && (
         <SinyalKutusu
@@ -505,6 +510,34 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         </SinyalKutusu>
       )}
 
+      {/* ---------- CONGRESS TRADING ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Kongre Uyesi Islemleri"
+          aciklama="ABD Kongre uyelerinin STOCK Act kapsaminda bildirdigi hisse islemleri."
+          rozet={kongre.veri?.fallback_used ? 'yedek kaynak (FMP)' : 'birincil kaynak'}
+          rozetRenk={kongre.veri?.fallback_used ? '#fb923c' : '#4ade80'}
+          durum={kongre.durum}
+          hata={kongre.hata}
+          uyari="Birincil kaynak Quiver abonelik kisiti nedeniyle erisilemiyor; veri FMP yedeginden geliyor. Bildirimler islem tarihinden haftalar sonra yayimlanabilir."
+        >
+          {kongre.veri && (
+            <>
+              <Satir etiket="Bildirilen islem" deger={sayiBicimle(kongre.veri.ozet?.islem_sayisi)} />
+              <Satir etiket="Alis / Satis bildirimi" deger={`${sayiBicimle(kongre.veri.ozet?.alis_sayisi)} / ${sayiBicimle(kongre.veri.ozet?.satis_sayisi)}`} />
+              <Satir etiket="Farkli uye sayisi" deger={sayiBicimle(kongre.veri.ozet?.farkli_uye)} />
+              <Satir etiket="Kaynak" deger={kongre.veri.source_label || kongre.veri.source || '—'} />
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+
+      <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600,
+        letterSpacing: '0.05em', textTransform: 'uppercase', margin: '16px 0 4px' }}>
+        Piyasa Mikroyapısı
+      </p>
+
       {/* ---------- FINRA DARK POOL ---------- */}
       {t && (
         <SinyalKutusu
@@ -595,6 +628,12 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         </SinyalKutusu>
       )}
 
+
+      <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600,
+        letterSpacing: '0.05em', textTransform: 'uppercase', margin: '16px 0 4px' }}>
+        Şirket Bağlamı ve Model
+      </p>
+
       {/* ---------- SIRKET TAKVIMI VE HABER YOGUNLUGU (Finnhub) ---------- */}
       {t && (
         <SinyalKutusu
@@ -659,6 +698,33 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
         </SinyalKutusu>
       )}
 
+      {/* ---------- QLIB ---------- */}
+      {t && (
+        <SinyalKutusu
+          baslik="Qlib Model Skoru"
+          aciklama="LightGBM/Alpha158 modelinin hisse icin urettigi ham skor."
+          rozet="karar zincirine bagli degil (lambda=0)"
+          rozetRenk="#fb923c"
+          durum={qlibSkor.durum}
+          hata={qlibSkor.hata}
+          uyari="Bu skor karar zincirine BAGLI DEGILDIR (lambda = 0). 23.08.2026 kalibrasyonunda (469.456 ornek-disi gozlem) gunluk kesitsel IC = 0.04223, %95 bootstrap guven araligi [0.02245, 0.06764] olculdu; yani IC istatistiksel olarak sifirdan farklidir. Buna ragmen lambda 0'da tutuldu, cunku (a) hisse SIRALAMASI anlamli degil - Rank IC 0.01501 ve %95 guven araligi [-0.00063, 0.03077] sifiri iciyor, (b) sistemin kendi olcutu olan Brier iyilesmesi +%0.44 ile gereken +%2 esiginin altinda kaldi. Tek basina bir sonuc cikarilmamalidir."
+        >
+          {qlibSkor.veri && (
+            <>
+              <Satir etiket="Skor" deger={qlibSkor.veri.score ?? '—'} />
+              <Satir etiket="Skorun ait oldugu gun" deger={(qlibSkor.veri.as_of_date || '—').toString().slice(0, 10)} />
+              <Satir etiket="Model" deger={qlibSkor.veri.model || '—'} />
+            </>
+          )}
+        </SinyalKutusu>
+      )}
+
+
+      <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600,
+        letterSpacing: '0.05em', textTransform: 'uppercase', margin: '16px 0 4px' }}>
+        Hisseden Bağımsız Piyasa Bağlamı
+      </p>
+
       {/* ---------- MAKRO YAYIN TAKVIMI VE GOSTERGELER (FRED) ---------- */}
       <SinyalKutusu
         baslik="Makro Yayin Takvimi ve Gostergeler"
@@ -702,49 +768,6 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
           </>
         )}
       </SinyalKutusu>
-
-      {/* ---------- CONGRESS TRADING ---------- */}
-      {t && (
-        <SinyalKutusu
-          baslik="Kongre Uyesi Islemleri"
-          aciklama="ABD Kongre uyelerinin STOCK Act kapsaminda bildirdigi hisse islemleri."
-          rozet={kongre.veri?.fallback_used ? 'yedek kaynak (FMP)' : 'birincil kaynak'}
-          rozetRenk={kongre.veri?.fallback_used ? '#fb923c' : '#4ade80'}
-          durum={kongre.durum}
-          hata={kongre.hata}
-          uyari="Birincil kaynak Quiver abonelik kisiti nedeniyle erisilemiyor; veri FMP yedeginden geliyor. Bildirimler islem tarihinden haftalar sonra yayimlanabilir."
-        >
-          {kongre.veri && (
-            <>
-              <Satir etiket="Bildirilen islem" deger={sayiBicimle(kongre.veri.ozet?.islem_sayisi)} />
-              <Satir etiket="Alis / Satis bildirimi" deger={`${sayiBicimle(kongre.veri.ozet?.alis_sayisi)} / ${sayiBicimle(kongre.veri.ozet?.satis_sayisi)}`} />
-              <Satir etiket="Farkli uye sayisi" deger={sayiBicimle(kongre.veri.ozet?.farkli_uye)} />
-              <Satir etiket="Kaynak" deger={kongre.veri.source_label || kongre.veri.source || '—'} />
-            </>
-          )}
-        </SinyalKutusu>
-      )}
-
-      {/* ---------- QLIB ---------- */}
-      {t && (
-        <SinyalKutusu
-          baslik="Qlib Model Skoru"
-          aciklama="LightGBM/Alpha158 modelinin hisse icin urettigi ham skor."
-          rozet="karar zincirine bagli degil (lambda=0)"
-          rozetRenk="#fb923c"
-          durum={qlibSkor.durum}
-          hata={qlibSkor.hata}
-          uyari="Bu skor karar zincirine BAGLI DEGILDIR (lambda = 0). 23.08.2026 kalibrasyonunda (469.456 ornek-disi gozlem) gunluk kesitsel IC = 0.04223, %95 bootstrap guven araligi [0.02245, 0.06764] olculdu; yani IC istatistiksel olarak sifirdan farklidir. Buna ragmen lambda 0'da tutuldu, cunku (a) hisse SIRALAMASI anlamli degil - Rank IC 0.01501 ve %95 guven araligi [-0.00063, 0.03077] sifiri iciyor, (b) sistemin kendi olcutu olan Brier iyilesmesi +%0.44 ile gereken +%2 esiginin altinda kaldi. Tek basina bir sonuc cikarilmamalidir."
-        >
-          {qlibSkor.veri && (
-            <>
-              <Satir etiket="Skor" deger={qlibSkor.veri.score ?? '—'} />
-              <Satir etiket="Skorun ait oldugu gun" deger={(qlibSkor.veri.as_of_date || '—').toString().slice(0, 10)} />
-              <Satir etiket="Model" deger={qlibSkor.veri.model || '—'} />
-            </>
-          )}
-        </SinyalKutusu>
-      )}
 
       {/* ---------- LIQUIDITY SIGNAL (hisseden bagimsiz) ---------- */}
       <SinyalKutusu
