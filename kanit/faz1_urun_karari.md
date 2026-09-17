@@ -295,7 +295,7 @@ Eksik olan yalnızca self-servis kayıt **arayüzü** — ürün boşluğu, FAZ 
 
 ---
 
-## K4 — İ-7 ATLANDI (kullanıcı kararı, 17.09.2026)
+## K4 — İ-7 önce atlandı, SONRA YAPILDI (kullanıcı kararı, 17.09.2026)
 
 **Karar: seçenek (a) — İ-7 atlanır, Faz 4'e geçilir.**
 
@@ -321,3 +321,53 @@ gitmekten çıkardı. Yani **yan kanal kapandı**, ama adalet ve muhasebe açık
 Kimlik artık servise ulaşıyor (`x-kullanici-id` başlığı İ-2 ile taşınıyor),
 yani bu iş yapılmak istendiğinde altyapı **hazır**; eksik olan yalnızca
 servis tarafındaki sayaç anahtarı.
+
+
+---
+
+## K5 — İ-7 YAPILDI (kullanıcı kararı, 17.09.2026)
+
+Kullanıcı sonradan "İ-7'yi de yap" dedi. Yapıldı ve commit'lendi (`efb013d`).
+
+### Çakışma nasıl çözüldü
+
+Dosyada hâlâ başka bir oturumun commit edilmemiş +11 satırı vardı
+(`zincir_istatistik`, 10.09). `git add` dosyayı bütün olarak sahnelediği için
+commit'e **yalnızca kendi hunk'larım** alındı:
+
+1. Değişiklikten önce dosyanın "onların hâli" anlık görüntüsü alındı
+2. Değişiklikten sonra `diff(onlar, şimdi)` = **yalnızca benim yamam**
+3. O yama `HEAD` sürümüne uygulandı → `HEAD + benim`
+4. Bu içerik `git hash-object -w` + `git update-index` ile **index'e** yazıldı
+
+Doğrulandı: sahnelenen içerikte `zincir_istatistik` **0 kez**, çalışma
+ağacında **4 kez** geçiyor. Yani onların işi yerinde duruyor ve commit'ime
+karışmadı. Ayrıca code 4 ile önce haberleşildi; dosyaya dokunmadığını teyit etti.
+
+### Ne yapıldı
+
+Üçüncü tarafın tavanı **değiştirilmedi** — `ANAHTAR_BASINA_GUNLUK_KOTA` satın
+alınmış bir sınırdır. Kullanıcı boyutu o tavanın **içinde** bir pay olarak
+tanımlandı:
+
+- `gex:kullanim:<kiraci>:<gun>` sayacı → **"kim harcadı"** artık `/quota`'da
+  raporlanıyor. Bütçe Onay Kuralı bunsuz kullanıcı başına uygulanamıyordu.
+- Yumuşak pay (`FLASHALPHA_KULLANICI_PAY_YUZDE`, varsayılan **80**): tek
+  kullanıcı günlük toplamın en fazla %80'ini alabilir, kalanı rezerve.
+  100 verilirse kısıt tamamen kapanır.
+- Kimlik İ-2'nin taşıdığı `x-kullanici-id` başlığından; tanınmayan değer
+  `sistem` kiracısına düşer (fail-open değil — harcama yine **sayılır**).
+
+### ⚠ DAĞITILMADI — bilinçli
+
+Değişiklik commit'lendi ama `alphawise-gamma-exposure` **yeniden kurulmadı**.
+İki ölçülmüş gerekçe:
+
+1. `docker build` çalışma ağacını kopyalar → başka bir oturumun **commit
+   edilmemiş** `zincir_istatistik` işi de imaja girerdi.
+2. Mevcut imajla modül **hiç içe aktarılamıyor**: code 4'ün `kuyruk_olasiligi`
+   modülü `pandas` istiyor ve imajda yok (`oipd` requirements'a yeni eklenmiş;
+   taze bir kurulum onu getirir ama bu onların dağıtım adımıdır).
+
+Yani bu servisin dağıtımı **code 4'ün işi tamamlandığında** yapılmalı; o
+dağıtımla benim değişikliğim de canlıya çıkar. Kendileri bilgilendirildi.

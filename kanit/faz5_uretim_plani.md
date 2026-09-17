@@ -91,7 +91,7 @@ Bunlar bu görevin kapsamı dışında kaldı ve **açıkça açık** bırakıl�
 
 | # | risk | neden kapanmadı |
 |---|---|---|
-| **R-4** | Kota adaleti ve muhasebesi (`gex:quota:<anahtar>`) | İ-7 atlandı (kullanıcı kararı): dosyada başka oturumun commit edilmemiş işi var. Kimlik servise ulaşıyor, altyapı hazır |
+| **R-4** ✅ | Kota adaleti ve muhasebesi | **KAPATILDI** — İ-7 yapıldı (`efb013d`): kullanıcı başına sayaç + yumuşak pay. Kod commit'li; servis dağıtımı code 4'ün `pandas`/`oipd` bağımlılığı çözüldüğünde yapılmalı |
 | **Ön kova** | Adalet mutlak değil — bir kullanıcı ~3-4× eşikte diğerini 429'a düşürebilir | Bilinçli ödünleşme; kalıcı çözüm güvenilir ters vekil |
 | **R-1** | Defter/broker kiracılığı | Kapsam A kararı: defter tek sistem hesabı kalıyor |
 | **R-7** | `/oz-iyilestirme/*` küresel strateji parametreleri | Korunan dosyada; kapsam dışı |
