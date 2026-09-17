@@ -130,3 +130,23 @@ async def get_liquidity_context():
     result = {"fed_balance_sheet": balance_sheet, "reverse_repo": rrp}
     _cache_set(cache_key, result, ttl_seconds=6 * 3600)
     return result
+
+async def get_specific_institution_position(ticker: str, institution_query: str, limit: int = 100):
+    """
+    Belirli bir kurumun (orn. 'Vanguard', 'BlackRock') bir hissedeki pozisyonunu
+    getirir. Mevcut get_13f_holders'i genis limit ile cagirip manager_name alaninda
+    kismi/buyuk-kucuk harf duyarsiz eslesme yapar (18.08.2026).
+    """
+    result = await get_13f_holders(ticker, limit=limit)
+    if "error" in result:
+        return result
+    holders = result.get("data", {}).get("holders", [])
+    q = institution_query.lower()
+    eslesenler = [h for h in holders if q in h.get("manager_name", "").lower()]
+    return {
+        "ticker": ticker,
+        "institution_query": institution_query,
+        "found": len(eslesenler) > 0,
+        "matches": eslesenler,
+        "searched_within_top": limit,
+    }
