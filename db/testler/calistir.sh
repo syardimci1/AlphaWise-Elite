@@ -34,14 +34,17 @@ if [[ "${1:-}" != "--sadece-test" ]]; then
   echo "### 5/6  sahte kullanıcılar (A, B ve yetim C)"
   psql_calistir "$BURA/02_test_verisi.sql"
 
-  echo "### 6/6  006 göçünü uygula"
+  echo "### 6/7  006 göçünü uygula"
   psql_calistir "$GOC/006_supabase_rls_kapsamayan_yollari_kapat.sql"
+
+  echo "### 7/7  007 göçünü uygula (kullanıcı görüntüleme kaydı)"
+  psql_calistir "$GOC/007_supabase_kullanici_goruntuleme_kaydi.sql"
 fi
 
 echo
 echo "====================== TEST AĞI ======================"
 hata=0
-for t in sizinti_testi.py yollar_testi.py goc_testi.py geri_alma_testi.py; do
+for t in sizinti_testi.py yollar_testi.py goc_testi.py geri_alma_testi.py goruntuleme_kaydi_testi.py; do
   printf '%-22s ' "$t"
   ozet="$(python3 "$BURA/$t" 2>&1 | grep -oE 'SONUC: [0-9]+/[0-9]+ PASS' | tail -1 || true)"
   if [[ -z "$ozet" ]]; then echo "*** ÇALIŞMADI ***"; hata=1

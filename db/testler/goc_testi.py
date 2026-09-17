@@ -134,7 +134,15 @@ sonuc("service_role/postgres yetkilerine dokunulmuyor",
       "service_role" not in kod and not re.search(r"FROM\s+postgres", kod))
 sonuc("RLS politikalari degistirilmiyor",
       "POLICY" not in kod.upper() and "ROW LEVEL SECURITY" not in kod.upper())
-sonuc("goc numarasi sirali (005'ten sonra 006)",
-      sorted(x.name[:3] for x in GOC.parent.glob("0*.sql"))[-1] == "006")
+# 17.09.2026 OLCUT DUZELTMESI: ilk surum "en yuksek goc numarasi 006" diyordu.
+# Bu, 007 eklendigi anda kirildi - ama kirilan sey KOD degil, OLCUTTU. Dogru
+# iddia "006 en sonuncusu" degil, "006 gercekten 005'ten SONRA geliyor ve
+# numaralarda bosluk/tekrar yok"dur.
+numaralar = sorted({x.name[:3] for x in GOC.parent.glob("0*.sql") if x.name[:3].isdigit()})
+sonuc("bu gocun numarasi 005'ten sonra", "006" in numaralar and "005" in numaralar
+      and numaralar.index("006") == numaralar.index("005") + 1, f"{numaralar}")
+beklenen = [f"{i:03d}" for i in range(1, len(numaralar) + 1)]
+sonuc("goc numaralarinda bosluk/tekrar yok", numaralar == beklenen,
+      f"{numaralar} vs {beklenen}")
 
 print("\n" + "="*100); print(f"FAZ 4 SONUC: {gecti}/{gecti+kaldi} PASS"); print("="*100)
