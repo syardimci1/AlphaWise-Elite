@@ -292,3 +292,32 @@ kullanıcı da giriş yapabilir durumda** (parola var, e-posta onaylı, banlı d
 ve `GOTRUE_DISABLE_SIGNUP=false`. FAZ 3'ün "2 gerçek kullanıcı" şartı bugün
 karşılanabilir: `selcuk@alphawise.test` (admin) ve `partner@alphawise.test` (partner).
 Eksik olan yalnızca self-servis kayıt **arayüzü** — ürün boşluğu, FAZ 3 blokajı değil.
+
+---
+
+## K4 — İ-7 ATLANDI (kullanıcı kararı, 17.09.2026)
+
+**Karar: seçenek (a) — İ-7 atlanır, Faz 4'e geçilir.**
+
+İ-7 (gamma-exposure kota muhasebesine kullanıcı boyutu eklemek)
+`gamma-exposure-service/main.py`'ye dokunacaktı. O dosyada **başka bir
+oturumun commit edilmemiş +11 satırı** var (10.09.2026 tarihli,
+`zincir_istatistik` entegrasyonu — Faz 0 taban çizgisinin 3. satırında).
+`git add` dosyayı bütün olarak sahnelediği için, benim değişikliğimi
+commit'lemek onların işini de süpürürdü — tam olarak dokunmamam gereken şey.
+
+**Bu yüzden kapatılmadan kalan gerçek risk (R-4, risk defterinde):**
+kota sayacı hâlâ API anahtarı başına (`gex:quota:<anahtar_adi>:<gun>`),
+kullanıcı başına değil. İki somut sonucu var:
+1. **Adalet:** A günün 25 FlashAlpha isteğini bitirirse B tüm gün "kota
+   doldu" görür — ödeme yapan bir müşteri için hizmet reddi.
+2. **Muhasebe:** "kim harcadı" ölçülemez, dolayısıyla CLAUDE.md'nin
+   Bütçe Onay Kuralı kullanıcı başına **uygulanamaz**.
+
+Kısmen azaltıldı: İ-2 ile hata gövdesi süzgeci, `kota_durumu()` içindeki
+API anahtarı adını ve tüm kiracıların ortak tüketim sayacını kullanıcıya
+gitmekten çıkardı. Yani **yan kanal kapandı**, ama adalet ve muhasebe açık.
+
+Kimlik artık servise ulaşıyor (`x-kullanici-id` başlığı İ-2 ile taşınıyor),
+yani bu iş yapılmak istendiğinde altyapı **hazır**; eksik olan yalnızca
+servis tarafındaki sayaç anahtarı.
