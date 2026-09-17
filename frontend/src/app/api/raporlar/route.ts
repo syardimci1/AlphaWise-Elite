@@ -1,21 +1,27 @@
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { RAPOR_DIZINI, GUVENLI_AD, raporKapisi } from '@/lib/raporlar'
 
 // Raporlar dizinindeki PDF'leri listeler. Dizin konteynere SALT OKUNUR
 // baglanir; bu route hicbir kosulda yazma yapmaz.
-const RAPOR_DIZINI = process.env.REPORTS_DIR || '/reports'
-
-// Yalnizca bu desene uyan dosya adlari kabul edilir. Yol ayiraci (/ veya \),
-// nokta-nokta (..) ve gizli dosyalar bu desenle zaten disarida kalir.
-const GUVENLI_AD = /^[A-Za-z0-9][A-Za-z0-9_-]*\.pdf$/
+//
+// 17.09.2026: dizin ve ad sozlesmesi lib/raporlar.ts'e TASINDI (indirme
+// ucuyla kopya olmasin diye) ve ROL KAPISI eklendi. Gerekcesi ve olculen
+// kanit o dosyanin basinda.
 
 function tarihAyikla(ad: string): string | null {
   const m = ad.match(/(\d{4}-\d{2}-\d{2})/)
   return m ? m[1] : null
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Kapi dosya sistemine dokunmadan ONCE: yetkisiz cagirana dizinin dolu mu
+  // bos mu oldugu hakkinda zamanlama uzerinden bilgi sizmasin.
+  const red = await raporKapisi(req)
+  if (red) return red
+
   try {
     // withFileTypes: yalnizca DOSYALARI al, alt dizinlere (orn. araclar/) girme
     const girdiler = await fs.readdir(RAPOR_DIZINI, { withFileTypes: true })
@@ -46,6 +52,8 @@ export async function GET() {
     if (err?.code === 'ENOENT') {
       return NextResponse.json({ raporlar: [], not: 'Rapor dizini bulunamadi' })
     }
-    return NextResponse.json({ error: 'Raporlar listelenemedi: ' + err.message }, { status: 500 })
+    // err.message ic yol/adres tasiyabilir; kullaniciya gitmez, gunluge gider.
+    console.warn('[raporlar] listeleme hatasi:', err?.message)
+    return NextResponse.json({ error: 'Raporlar listelenemedi' }, { status: 500 })
   }
 }
