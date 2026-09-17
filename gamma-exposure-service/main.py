@@ -25,6 +25,7 @@ Redis isim alani: "gex:" (ifs:, finra:dp:, congress:, llmquant: ile carpismaz)
 """
 import os
 import json
+import re
 import time
 from datetime import date, datetime, timezone, timedelta
 
@@ -32,7 +33,7 @@ import httpx
 import redis
 
 import gex_onbellek as _go
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Header
 
 app = FastAPI(
     title="ALPHAWISE - Gamma Exposure Service",
@@ -43,6 +44,28 @@ app = FastAPI(
 FLASHALPHA_BASE = os.getenv("FLASHALPHA_BASE_URL", "https://lab.flashalpha.com/v1")
 FINRA_DARKPOOL_URL = os.getenv("FINRA_DARKPOOL_URL", "http://alphawise-finra-darkpool:8000")
 ANAHTAR_BASINA_GUNLUK_KOTA = int(os.getenv("FLASHALPHA_DAILY_QUOTA", "5"))
+
+# --- KULLANICI BAZLI KOTA MUHASEBESI (17.09.2026) ---------------------------
+# SORUN (olculdu): kota sayaci YALNIZCA API anahtari basinaydi
+# (gex:quota:<anahtar>:<gun>). Iki somut sonucu vardi:
+#   1. ADALET  : bir kullanici gunun tamamini tek basina yakabiliyordu; ikinci
+#                kullanici tum gun "kota doldu" goruyordu.
+#   2. MUHASEBE: "kim harcadi" HIC olculemiyordu, dolayisiyla CLAUDE.md'nin
+#                Butce Onay Kurali kullanici basina UYGULANAMIYORDU.
+#
+# UCUNCU TARAFIN TAVANI DEGISTIRILMIYOR. `ANAHTAR_BASINA_GUNLUK_KOTA` satin
+# alinmis bir sinirdir, bizim sectigimiz bir adalet parametresi degildir.
+# Kullanici boyutu o tavanin ICINDE bir PAY olarak tanimlanir, tavana EKLENMEZ.
+#
+# YUMUSAK PAY: tek bir kullanici gunluk toplamin en fazla bu yuzdesini
+# kullanabilir; geri kalan digerlerine REZERVE kalir. 100 verilirse kisit
+# tamamen kapanir (bugunku davranis).
+KULLANICI_AZAMI_PAY_YUZDE = int(os.getenv("FLASHALPHA_KULLANICI_PAY_YUZDE", "80"))
+
+# Kimligi olmayan cagri bu kiraci adina yazilir. FAZ 1 karari: JWT'siz ic
+# trafik fail-closed DEGIL, acikca "sistem" kiracisina duser - boylece
+# otomasyon kirilmaz ama harcama yine de ATFEDILIR.
+SISTEM_KIRACI = "sistem"
 CACHE_PREFIX = "gex:"
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "30"))
 GECIS_KODLARI = {401, 403, 429}  # bu kodlarda siradaki anahtara gecilir
@@ -117,6 +140,71 @@ def _kota_redis_anahtari(anahtar_adi):
     return f"{CACHE_PREFIX}quota:{anahtar_adi}:{_bugun()}"
 
 
+# Kabul edilen kimlik bicimi: Supabase UUID ya da tam olarak "sistem".
+# DAR TUTULDU: bu deger Redis anahtarina giriyor; serbest metin kabul etmek
+# anahtar enjeksiyonu yuzeyi acardi.
+_UUID_DESENI = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _kullanici_dogrula(ham):
+    """Frontend middleware'inin yazdigi x-kullanici-id basligini dogrular.
+
+    Deger taninmiyorsa SISTEM_KIRACI'ya duser - fail-open DEGIL: harcama yine
+    sayilir, yalnizca bilinmeyen bir kiraciya atfedilir. Sayilmayan harcama,
+    muhasebesiz tukenen butce demektir.
+    """
+    if not ham:
+        return SISTEM_KIRACI
+    d = str(ham).strip()
+    if d == SISTEM_KIRACI:
+        return SISTEM_KIRACI
+    return d.lower() if _UUID_DESENI.match(d) else SISTEM_KIRACI
+
+
+def _kullanici_kullanim_anahtari(kullanici):
+    return f"{CACHE_PREFIX}kullanim:{kullanici}:{_bugun()}"
+
+
+def _toplam_gunluk_kota():
+    return ANAHTAR_BASINA_GUNLUK_KOTA * max(1, len(_flashalpha_anahtarlari()))
+
+
+def _kullanici_azami_pay():
+    """Tek bir kullanicinin gunde kullanabilecegi azami istek sayisi.
+
+    Ucuncu tarafin tavaninin ICINDE bir paydir; tavani BUYUTMEZ.
+    Yuzde >= 100 ise kisit yoktur (bugunku davranis).
+    """
+    toplam = _toplam_gunluk_kota()
+    if KULLANICI_AZAMI_PAY_YUZDE >= 100:
+        return toplam
+    return max(1, (toplam * KULLANICI_AZAMI_PAY_YUZDE) // 100)
+
+
+def kullanici_kullanim_durumu():
+    """Bugun hangi kiraci ne kadar harcadi. Hicbir sayaci artirmaz."""
+    try:
+        r = _get_redis()
+        onek = f"{CACHE_PREFIX}kullanim:"
+        sonek = f":{_bugun()}"
+        dokum = {}
+        for ham in r.scan_iter(match=f"{onek}*{sonek}", count=500):
+            ad = ham.decode() if isinstance(ham, bytes) else str(ham)
+            kiraci = ad[len(onek):-len(sonek)]
+            deger = r.get(ad)
+            dokum[kiraci] = int(deger) if deger else 0
+        return {
+            "kullanici_basina": dokum,
+            "kullanici_azami_pay": _kullanici_azami_pay(),
+            "pay_yuzdesi": KULLANICI_AZAMI_PAY_YUZDE,
+        }
+    except Exception as e:
+        return {"hata": f"kullanim dokumu okunamadi: {str(e)[:120]}"}
+
+
 def _sifirlanma_utc():
     return (datetime.now(timezone.utc) + timedelta(seconds=_gece_yarisina_kalan_saniye())).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -169,19 +257,45 @@ def kota_durumu():
     }
 
 
-def _tek_anahtar_kota_ayir(anahtar_adi):
+def _tek_anahtar_kota_ayir(anahtar_adi, kullanici=None):
     """
     Tek bir anahtarin kotasindan atomik olarak 1 birim ayirir.
     Doner: (izin_verildi: bool, kullanilan_sonrasi: int)
     Kota asilirsa sayac geri alinir ki raporlanan deger dogru kalsin.
+
+    17.09.2026 — KULLANICI BOYUTU:
+    `kullanici` verilirse harcama AYRICA kullanici basina sayilir ve yumusak
+    pay uygulanir. Sira bilincli: once KULLANICI payi kontrol edilir, cunku
+    pay dolmussa anahtar sayacina hic dokunmamak gerekir - aksi halde
+    reddedilen bir istek ucuncu tarafin kotasini tuketmis gorunurdu.
+
+    `kullanici` None ise davranis BUGUNKU ile birebir aynidir (geriye uyumluluk).
     """
     r = _get_redis()
+
+    kk = None
+    if kullanici:
+        kk = _kullanici_kullanim_anahtari(kullanici)
+        pay = _kullanici_azami_pay()
+        kn = r.incr(kk)
+        if kn == 1:
+            r.expire(kk, _gece_yarisina_kalan_saniye())
+        if kn > pay:
+            # Kullanici kendi payini doldurdu. Sayac geri alinir ki raporlanan
+            # deger dogru kalsin; ANAHTAR sayacina HIC dokunulmadi.
+            r.decr(kk)
+            return False, pay
+
     rk = _kota_redis_anahtari(anahtar_adi)
     n = r.incr(rk)
     if n == 1:
         r.expire(rk, _gece_yarisina_kalan_saniye())
     if n > ANAHTAR_BASINA_GUNLUK_KOTA:
         r.decr(rk)
+        # Anahtar kotasi doldu ama kullanici sayaci artirilmisti; geri al ki
+        # kullaniciya HARCAMADIGI bir istek yazilmasin.
+        if kk is not None:
+            r.decr(kk)
         return False, ANAHTAR_BASINA_GUNLUK_KOTA
     return True, n
 
@@ -191,6 +305,7 @@ def _tek_anahtar_kota_ayir(anahtar_adi):
 @app.get("/gex/{ticker}")
 async def gamma_exposure(
     ticker: str,
+    x_kullanici_id: str = Header(default=None, alias="x-kullanici-id"),
     expiration: str = Query(
         None,
         description=(
@@ -208,6 +323,9 @@ async def gamma_exposure(
     doner (sessiz hata YOK).
     """
     ticker = ticker.upper().strip()
+    # Kimlik frontend middleware'inin yazdigi basliktan gelir; taninmayan
+    # deger "sistem" kiracisina duser (bkz. _kullanici_dogrula).
+    kiraci = _kullanici_dogrula(x_kullanici_id)
     anahtarlar = _flashalpha_anahtarlari()
     if not anahtarlar:
         raise HTTPException(
@@ -290,7 +408,7 @@ async def gamma_exposure(
         # "hakkin var" ayni sey degildir. Onceki davranis burada cıplak bir
         # RuntimeError ile 500 uretiyordu; neden oldugu yanittan anlasilmiyordu.
         try:
-            izin, kullanilan = _tek_anahtar_kota_ayir(anahtar_adi)
+            izin, kullanilan = _tek_anahtar_kota_ayir(anahtar_adi, kiraci)
         except Exception as e:
             raise HTTPException(
                 status_code=503,
@@ -423,6 +541,9 @@ async def kota():
         "servis": "gamma-exposure-service",
         "kaynak": "FlashAlpha ucretsiz tier (cok anahtarli rotasyon)",
         **kota_durumu(),
+        # 17.09.2026: "kim harcadi" artik olculebiliyor. Butce Onay Kurali
+        # bunsuz kullanici basina UYGULANAMIYORDU.
+        "kullanim_dokumu": kullanici_kullanim_durumu(),
     }
 
 
