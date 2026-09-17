@@ -26,7 +26,7 @@ Redis isim alani: "gex:" (ifs:, finra:dp:, congress:, llmquant: ile carpismaz)
 import os
 import json
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 import httpx
 import redis
@@ -682,6 +682,79 @@ async def dex_vanna(
     try:
         _get_redis().setex(onbellek_anahtari, DEX_ONBELLEK_TTL,
                        json.dumps(sonuc, default=str))
+    except Exception:
+        pass
+    return sonuc
+
+
+# ===== KUYRUK OLASILIGI / RISK-NOTR DAGILIM (17.09.2026, Faz 1) =====
+# MEVCUT /gex, /dix-like, /dex-vanna UCLARINA DOKUNULMADI.
+#
+# Grup 5 denetimi #6 (KUR karari): oipd ile vol gulumsemesinden risk-notr
+# olasilik dagilimi. FlashAlpha kotasi TUKETMEZ (openbb/yfinance, /dex-vanna
+# ile ayni kaynak/ilke). Hata govdelerinde ham ic bilgi (anahtar adi, kota
+# sayaci) TASINMAZ - alphawise-elite-ff'nin bu dosyada olctugu sizinti
+# deseni burada TEKRARLANMAZ.
+import kuyruk_olasiligi as _ko
+
+KUYRUK_ONBELLEK_TTL = int(os.getenv("KUYRUK_TTL", "900"))  # 15 dk
+
+
+@app.get("/kuyruk-olasiligi/{ticker}")
+async def kuyruk_olasiligi_ucu(ticker: str, vade: str):
+    """Risk-notr olasilik dagilimi - tek vade icin.
+
+    FlashAlpha kotasi TUKETMEZ. Karar kodu icin degil, rapor icindir.
+    """
+    t = ticker.upper().strip()
+    if not t.replace(".", "").replace("-", "").isalnum() or len(t) > 10:
+        raise HTTPException(status_code=400, detail="gecersiz ticker bicimi")
+
+    onbellek_anahtari = f"kuyrukolasilik:{t}:{vade}"
+    try:
+        r = _get_redis()
+        onbellek = r.get(onbellek_anahtari)
+        if onbellek:
+            veri = json.loads(onbellek)
+            veri["onbellekten"] = True
+            return veri
+    except Exception:
+        pass
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            yanit = await client.get(f"{OPENBB_TABAN}/derivatives/options/chains/{t}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="openbb-service'e ulasilamadi")
+    if yanit.status_code != 200:
+        raise HTTPException(status_code=502, detail="openbb-service'ten zincir alinamadi")
+    zincir = yanit.json()
+    if not isinstance(zincir, list) or not zincir:
+        raise HTTPException(status_code=404, detail=f"{t}: opsiyon zinciri bos")
+
+    spot = None
+    for k in zincir:
+        if k.get("underlying_price"):
+            spot = float(k["underlying_price"])
+            break
+    if not spot:
+        raise HTTPException(status_code=502, detail="dayanak fiyati bulunamadi")
+
+    try:
+        sonuc = _ko.hesapla(zincir, spot=spot, risksiz_oran=0.03775,
+                            vade=vade, degerleme_tarihi=date.today().isoformat())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=502, detail="risk-notr dagilim hesaplanamadi")
+
+    sonuc["ticker"] = t
+    sonuc["kaynak"] = "openbb-service /derivatives/options/chains (yfinance) — UCRETSIZ"
+    sonuc["flashalpha_kotasi_tuketildi"] = False
+    sonuc["onbellekten"] = False
+    try:
+        _get_redis().setex(onbellek_anahtari, KUYRUK_ONBELLEK_TTL,
+                           json.dumps(sonuc, default=str))
     except Exception:
         pass
     return sonuc
