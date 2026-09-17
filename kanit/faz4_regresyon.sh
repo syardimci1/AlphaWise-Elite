@@ -53,14 +53,21 @@ echo
 echo "--- 4.5 karar_uret ETKILENMEDI ---"
 # Iddia: bu gorev HICBIR Python dosyasina dokunmadi, dolayisiyla karar yolu
 # ayni girdide ayni cikti uretir. Statik ve kesin kanit.
-DISARIDAKI=$(git -C "$KOK" diff --name-only "$TABAN"..HEAD \
-             | grep "\.py$" | grep -v "^db/testler/" || true)
-if [ -z "$DISARIDAKI" ]; then
-  echo "      degisen Python dosyalari: $(git -C "$KOK" diff --name-only "$TABAN"..HEAD | grep -c "\.py$") adet, HEPSI db/testler altinda"
-  sonuc 0 "db/testler disinda DEGISEN Python dosyasi yok (karar yolu dokunulmadi)"
+# 17.09.2026 OLCUT DUZELTMESI: ilk surum "db/testler disinda HIC Python
+# degismedi" diyordu. Bu olcut FAZLA GENISTI ve I-7 (gamma-exposure kota
+# muhasebesi) yapilinca kirildi - ama kirilan sey KOD degil, OLCUTTU.
+# 4.5'in gercek iddiasi "hicbir Python degismedi" degil, "KARAR YOLU
+# dokunulmadi"dir. gamma-exposure bir piyasa VERISI servisidir; karar
+# yolunda degildir. Dogru olcut karar yolu dizinlerini adiyla sayar.
+KARAR_YOLU="^(maa|taa)/|^godmode-paper-trading-service/src/"
+DEGISEN=$(git -C "$KOK" diff --name-only "$TABAN"..HEAD | grep "\.py$" | grep -E "$KARAR_YOLU" || true)
+if [ -z "$DEGISEN" ]; then
+  TUM=$(git -C "$KOK" diff --name-only "$TABAN"..HEAD | grep -c "\.py$")
+  echo "      degisen Python: $TUM adet; KARAR YOLUNDA (maa/, taa/, godmode .../src/): 0"
+  sonuc 0 "karar yolunda DEGISEN Python dosyasi yok (karar_uret dokunulmadi)"
 else
-  echo "      db/testler DISINDA degisen: $DISARIDAKI"
-  sonuc 1 "db/testler disinda DEGISEN Python dosyasi yok (karar yolu dokunulmadi)"
+  echo "      KARAR YOLUNDA degisen: $DEGISEN"
+  sonuc 1 "karar yolunda DEGISEN Python dosyasi yok (karar_uret dokunulmadi)"
 fi
 
 # ---------------------------------------------------------------- 4.9
@@ -84,14 +91,18 @@ fi
 
 # ---------------------------------------------------------------- Y7
 echo
-echo "--- Y7: URETIM DOKUNULMADI ---"
+# 17.09.2026: kullanici onayiyla 007 URETIME UYGULANDI. Olcut artik
+# "hicbir sey uygulanmadi" degil, "BEKLENEN durumda" olmali - yoksa dogru
+# bir uygulamadan sonra kirmiziya doner ve yanlis alarm uretir.
+echo "--- Y7: URETIM BEKLENEN DURUMDA (007 onayla uygulandi) ---"
 URET=$(docker exec supabase-db psql -U postgres -d postgres -t -A -c "
 SELECT (SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relname='kullanici_goruntuleme_kaydi')
     || '/' || (SELECT COUNT(*) FROM public.profiles)
     || '/' || (SELECT COUNT(*) FROM public.user_portfolios);" 2>/dev/null)
-echo "      uretimde 007_tablo/profiles/user_portfolios = $URET  (0/2/1 OLMALI)"
-[ "$URET" = "0/2/1" ]; sonuc $? "uretim degismedi: 007 uygulanmadi, veri ayni"
+echo "      uretimde 007_tablo/profiles/user_portfolios = $URET  (1/2/1 OLMALI)"
+[ "$URET" = "1/2/1" ]
+sonuc $? "007 uygulandi (1) ve MEVCUT VERI degismedi (profiles=2, portfoy=1)"
 
 echo
 echo "===================================================================="

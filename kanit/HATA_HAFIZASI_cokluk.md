@@ -179,9 +179,33 @@ izin vermeli ya da öncesinde `rm -rf .next` yapmalıdır.
 
 ---
 
-## Ortak örüntü (H-1, H-3, H-4, H-5)
+## H-6 — Ölçüt eskimesi, dört kez tekrarlandı
 
-Beşin dördünde sorun **koda değil, araca/ölçüme** aitti — bu, önceki
+**Faz:** 3, 4, 5 · **Tekrar:** 4
+
+Aynı sınıf tuzak bu görevde **dört kez** çıktı. Hiçbirinde kod bozuk değildi;
+her seferinde **ölçüt** eskimişti ve düzeltilmeseydi yanlış alarm üretecekti:
+
+| # | ölçüt | neden eskidi | doğru iddia |
+|---|---|---|---|
+| 1 | "en yüksek göç numarası 006" | 007 eklendi | "006, 005'ten sonra gelir ve numaralarda boşluk yok" |
+| 2 | "geri alma sonrası ACL == canlı üretim" | üretim korunur korunmaz taban değişti | taban `01_uretim_acl_esitle.sql`'den **üretilir** |
+| 3 | "db/testler dışında hiç Python değişmedi" | İ-7 `gamma-exposure/main.py`'yi değiştirdi | "**karar yolunda** (maa/, taa/, godmode/src/) değişen yok" |
+| 4 | "üretimde 007 yok (0/2/1)" | kullanıcı onayıyla 007 uygulandı | "007 uygulandı (1) **ve mevcut veri değişmedi**" |
+
+**Ortak kök neden:** hepsi *bir anlık durumu* iddia ediyordu, oysa doğru iddia
+*bir değişmezi* anlatmalıydı. "En yüksek numara 006'dır" bir anlık durumdur;
+"numaralar sıralı ve boşluksuzdur" bir değişmezdir. İlki her yeni commit'te
+kırılır, ikincisi kırılmaz.
+
+**Ders:** Bir test yazarken sorulacak soru "bugün ne doğru?" değil,
+**"yarın da doğru kalması gereken şey ne?"** olmalı. Anlık duruma bağlanan
+her ölçüt, doğru bir değişiklikten sonra yanlış alarm üretir — ve yanlış
+alarm, gerçek bir kırılmayı görmezden gelmeye alıştırır.
+
+## Ortak örüntü (H-1, H-3, H-4, H-5, H-6)
+
+Altının beşinde sorun **koda değil, araca/ölçüme** aitti — bu, önceki
 görevde dört kez tekrarlanan örüntünün aynısı. Bu görevde alınan yapısal
 karşı önlem: her ölçüm aracının kendisi **mutasyon testiyle** sınanıyor
 (AST hash'i 4 mutasyonla, silinme denetimi 1 mutasyonla doğrulandı).
