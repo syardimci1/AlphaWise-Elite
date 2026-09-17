@@ -15,6 +15,7 @@ from . import baski
 from . import dix as _dix
 from . import finra
 from . import regsho
+from . import sepet_kaynagi
 
 app = FastAPI(
     title="ALPHAWISE - FINRA Dark Pool Service",
@@ -192,7 +193,12 @@ async def borsa_disi_baski(
 
 @app.get("/dix")
 async def dix_endeksi(
-    semboller: str = Query(..., description="Virgulle ayrilmis sepet, orn. AAPL,MSFT,NVDA"),
+    semboller: str = Query(None, description="Virgulle ayrilmis sepet, orn. AAPL,MSFT,NVDA"),
+    otomatik_sepet: bool = Query(
+        False, description=("True ise 'semboller' YERINE Equibles'tan dogrulanmis "
+                            "endeks bileseni sepeti (varsayilan sp-500) kullanilir. "
+                            "'semboller' ile AYNI ANDA verilemez (16.09.2026, madde 52).")),
+    endeks: str = Query("sp-500", description="otomatik_sepet=true iken kullanilacak endeks"),
     gun_geriye: int = Query(1, ge=1, le=10,
                             description="Kac is gunu geriye bakilsin (T+1 yayim)"),
 ):
@@ -201,10 +207,28 @@ async def dix_endeksi(
     RESMI DIX DEGILDIR; kapsam, sepet ve agirlik farklari yanitin icinde
     acikca verilir. Sepette olup dosyada bulunmayan sembol SIFIR SAYILMAZ,
     kapsam disi olarak raporlanir.
+
+    ESKI DAVRANIS (16.09.2026 oncesi) KORUNUR: semboller verilip
+    otomatik_sepet verilmezse davranis BIREBIR AYNIDIR.
     """
-    sepet = [s.strip().upper() for s in (semboller or "").split(",") if s.strip()]
+    if semboller and otomatik_sepet:
+        raise HTTPException(status_code=400, detail=(
+            "semboller ve otomatik_sepet ayni anda verilemez - hangi sepetin "
+            "kullanilacagi ACIKCA secilmeli, biri sessizce digerini EZMEMELI"))
+
+    endeks_meta = None
+    if otomatik_sepet:
+        endeks_verisi, hata = sepet_kaynagi.endeks_sepeti_cek(endeks)
+        if hata:
+            raise HTTPException(status_code=502, detail={
+                "neden": "dogrulanmis endeks sepeti alinamadi", "hata": hata})
+        sepet = endeks_verisi["sepet"]
+        endeks_meta = {k: v for k, v in endeks_verisi.items() if k != "agirliklar"}
+    else:
+        sepet = [s.strip().upper() for s in (semboller or "").split(",") if s.strip()]
     if not sepet:
-        raise HTTPException(status_code=400, detail="sepet bos")
+        raise HTTPException(status_code=400, detail=(
+            "sepet bos - 'semboller' verin ya da otomatik_sepet=true kullanin"))
     if len(sepet) > 600:
         raise HTTPException(status_code=400, detail="sepet en fazla 600 sembol")
 
@@ -229,7 +253,51 @@ async def dix_endeksi(
             detail="Istenen gun icin FINRA gunluk dosyasi yayimlanmamis")
     sonuc = _dix.dix_hesapla(veri, sepet)
     sonuc["tarih"] = g.isoformat()
+    if endeks_meta is not None:
+        sonuc["sepet_kaynagi"] = endeks_meta
     return sonuc
+
+
+@app.get("/endeks/{index}")
+async def endeks_bilesenleri(index: str):
+    """Dogrulanmis endeks bileseni listesi (Equibles, gunde bir yenilenir).
+
+    /dix?otomatik_sepet=true ucunun kullandigi AYNI kaynak - burada
+    bagimsiz olarak da sorgulanabilir (orn. frontend'de sepeti gostermek
+    icin)."""
+    veri, hata = sepet_kaynagi.endeks_sepeti_cek(index)
+    if hata:
+        kod = 429 if hata.get("kota_asimi") else 502
+        raise HTTPException(status_code=kod, detail=hata)
+    return veri
+
+
+@app.get("/cftc-cot")
+async def cftc_cot(
+    kategori: str = Query(None, description=(
+        "Agriculture, Energy, Metals, EquityIndices, InterestRates, Currencies "
+        "(bos ise tumu)")),
+):
+    """Haftalik CFTC Commitments of Traders pozisyon ozeti - SEMBOLDEN
+    BAGIMSIZ, tek cagriyla tum piyasayi kapsar (madde 52)."""
+    veri, hata = sepet_kaynagi.cftc_cot_cek(kategori)
+    if hata:
+        kod = 429 if hata.get("kota_asimi") else 502
+        raise HTTPException(status_code=kod, detail=hata)
+    return veri
+
+
+@app.get("/put-call-orani")
+async def put_call_orani(
+    tip: str = Query("Total", description="Total, Equity, Index, Vix, Etp"),
+    limit: int = Query(5, ge=1, le=90, description="Kac gunluk gecmis"),
+):
+    """CBOE put/call orani gecmisi - SEMBOLDEN BAGIMSIZ (madde 52)."""
+    veri, hata = sepet_kaynagi.putcall_orani_cek(tip, limit)
+    if hata:
+        kod = 429 if hata.get("kota_asimi") else 400
+        raise HTTPException(status_code=kod, detail=hata)
+    return veri
 
 
 @app.get("/regsho-durum")
