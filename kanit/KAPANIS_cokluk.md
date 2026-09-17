@@ -59,12 +59,45 @@ deponun kendi manifestiyle çapraz doğrulandı (ikisi de `dbd47e6f4946`).
   `db/testler/` altında.
 - Ölçülen: kimlik katmanı **12,73 ms**; 100 eşzamanlı kullanıcıda **sıfır karışma**.
 
-## 5. Üretim Planı (FAZ 5 — ONAY BEKLİYOR)
+## 5. Üretim Uygulaması (FAZ 5 — ✅ UYGULANDI, 17.09.2026)
 
 - **Göç:** `007_*.sql` + `007_geri_al_*.sql` (yalnızca ekleme, veri riski sıfır)
 - **Rollback:** tek komut, test edildi, idempotent
-- **Seçenekler:** A (ikisini de şimdi) / B (önce 007, frontend sonra) / C (bekle)
-- **Öneri:** **A**
+- **Kullanıcı kararı: A — ikisi de uygulandı.** Rapor izinli rolleri:
+  `admin,partner` (varsayılan, sıfır regresyon).
+
+### Uygulama sonucu — ölçüldü
+
+**Parça 1 — 007 göçü (`supabase-db`)**
+- Göçün kendi doğrulaması: **8/8** hedefte
+- Mevcut veri **değişmedi**: `profiles=2, user_portfolios=1, auth.users=2`,
+  profil özeti `583d6743a512781cf63281925aa3f09a`, politika sayısı 4.
+  Tek fark beklenendi: `public` tablo sayısı 2 → 3.
+- **Saldırılar üretim üzerinde fiilen denendi, 6/6 engellendi:**
+
+| deneme | sonuç |
+|---|---|
+| `anon` SELECT | `permission denied for table` |
+| `anon` TRUNCATE | `permission denied for table` |
+| `anon` fonksiyon çağrısı | `permission denied for function` |
+| `authenticated` doğrudan SELECT | `permission denied for table` |
+| `authenticated` doğrudan INSERT | `permission denied for table` |
+| `authenticated` sequence `nextval` | `permission denied for sequence` |
+
+- **Meşru yol çalışıyor:** gerçek bir üretim kullanıcısının oturumunda
+  `goruntuleme_kaydi_yaz(...)` → `id=1` (işlem geri alındı).
+
+**Parça 2 — Frontend dağıtımı**
+- `docker compose up -d --no-deps --build frontend` → yeni imaj, **15 sn**'de `healthy`
+- **Komşu servisler etkilenmedi** (ölçüldü): `supabase-db` 4 hafta,
+  `alphawise-maa` 13 gün, `alphawise-portfoy` 8 gün, `alphawise-gamma-exposure`
+  7 gün, `godmode-paper-trading` 5 gün — hiçbirinin uptime'ı sıfırlanmadı.
+  `--no-deps` işe yaradı.
+- **Konteynerde yeni kod doğrulandı:** `kiraci.ts`, `rol.ts`, `raporlar.ts`
+  mevcut; middleware `@/lib/kiraci` ithal ediyor; **16 rota** kimlik taşıyor.
+- **Canlı davranış:** `/api/raporlar` çerezsiz → **401** + `x-oturum: cerez_yok`;
+  beyaz liste dışı `/api/maa/decide/MSFT` → **403** (jeton harcamadan);
+  ana sayfa → **200**.
 - **Riskler:** `kanit/faz5_uretim_plani.md` — kapanmayan 7 risk açıkça listeli
   (en önemlisi R-4 kota adaleti ve paylaşılan ön kova)
 
