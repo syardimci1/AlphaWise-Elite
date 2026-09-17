@@ -17,36 +17,56 @@ import pandas as pd
 from oipd import ProbCurve, MarketInputs
 
 
+class KuyrukOlasiligiHatasi(ValueError):
+    """Bu modulun kendi girdi dogrulama hatalari (negatif fiyat, yetersiz
+    strike). main.py yalnizca BU tipi 422'ye cevirir; oipd/pandas'tan
+    gelen diger ValueError'lar (ic detay icerebilir) 502'ye duser."""
+
+
 def openbb_zincirini_oipd_bicimine_cevir(kontratlar: list[dict], vade: str) -> pd.DataFrame:
     """openbb /derivatives/options/chains formatindan (dex_vanna.py'nin de
     kullandigi alan adlari: strike, option_type, expiration, last_trade_price)
     oipd'nin ProbCurve.from_chain bekledigi tek-vadeli uzun-formata cevirir.
 
     Yalnizca `vade`ye esit expiration'lu kontratlar alinir (oipd tek vade
-    ister, ProbCurve.from_chain coklu vadede ValueError firlatir)."""
+    ister, ProbCurve.from_chain coklu vadede ValueError firlatir). Eksik/
+    sayisal-olmayan last_trade_price'li kontratlar SESSIZCE atlanir (tek
+    likit-olmayan strike TUM istegi dusurmemeli) - strike/option_type ise
+    zincirde HER ZAMAN dolu olan zorunlu alanlardir (dex_vanna.py ile ayni
+    varsayim)."""
     satirlar = []
     for k in kontratlar:
         if str(k.get("expiration")) != vade:
             continue
+        fiyat = k.get("last_trade_price")
+        if fiyat is None:
+            continue
+        try:
+            fiyat = float(fiyat)
+        except (TypeError, ValueError):
+            continue
         satirlar.append({
             "strike": float(k["strike"]),
             "option_type": str(k["option_type"]).lower(),
-            "last_price": float(k["last_trade_price"]),
+            "last_price": fiyat,
             "expiry": vade,
         })
-    return pd.DataFrame(satirlar)
+    return pd.DataFrame(satirlar, columns=["strike", "option_type", "last_price", "expiry"])
 
 
 def hesapla(kontratlar: list[dict], spot: float, risksiz_oran: float,
            vade: str, degerleme_tarihi: str) -> dict:
     """Risk-notr olasilik dagilimini hesaplar. Audit #6'daki B4 kirma
-    bulgularini (negatif fiyat, yetersiz strike -> ValueError) DEGISTIRMEDEN
-    disariya tasir - servis (main.py) bunlari HTTPException 400/422'ye cevirir."""
+    bulgularini (negatif fiyat, yetersiz strike -> KuyrukOlasiligiHatasi)
+    DEGISTIRMEDEN disariya tasir - servis (main.py) bunlari HTTPException
+    422'ye cevirir; oipd/pandas'tan gelen diger ValueError'lar (KuyrukOlasiligiHatasi
+    DEGIL) main.py'de 502'ye duser (ic detay sizdirmamak icin)."""
     chain = openbb_zincirini_oipd_bicimine_cevir(kontratlar, vade)
+    if chain["strike"].nunique() < 5:
+        raise KuyrukOlasiligiHatasi(
+            f"Yetersiz opsiyon verisi: en az 5 strike gerekli, {chain['strike'].nunique()} bulundu")
     if (chain["last_price"] < 0).any():
-        raise ValueError("Opsiyon zincirinde negatif fiyat var")
-    if len(chain) < 5:
-        raise ValueError(f"Yetersiz opsiyon verisi: en az 5 strike gerekli, {len(chain)} bulundu")
+        raise KuyrukOlasiligiHatasi("Opsiyon zincirinde negatif fiyat var")
 
     market = MarketInputs(
         risk_free_rate=risksiz_oran,

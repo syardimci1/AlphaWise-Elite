@@ -6,7 +6,7 @@ davranislar burada REGRESYON testine cevrilir: negatif fiyat ValueError
 import pandas as pd
 import pytest
 
-from kuyruk_olasiligi import openbb_zincirini_oipd_bicimine_cevir, hesapla
+from kuyruk_olasiligi import openbb_zincirini_oipd_bicimine_cevir, hesapla, KuyrukOlasiligiHatasi
 
 
 def _ornek_kontratlar():
@@ -46,20 +46,43 @@ def test_hesapla_gercekci_zincirle_calisir():
 
 
 def test_negatif_fiyat_ACIK_HATAYLA_reddedilir():
-    """audit K3: negatif last_price -> ValueError, SESSIZCE yutulmaz."""
+    """audit K3: negatif last_price -> KuyrukOlasiligiHatasi, SESSIZCE yutulmaz."""
     kontratlar = _ornek_kontratlar()
     kontratlar[0]["last_trade_price"] = -5.0
-    with pytest.raises(ValueError, match="negatif"):
+    with pytest.raises(KuyrukOlasiligiHatasi, match="negatif"):
         hesapla(kontratlar, spot=765.96, risksiz_oran=0.03775,
                 vade="2026-10-16", degerleme_tarihi="2026-09-08")
 
 
 def test_yetersiz_strike_ACIK_HATAYLA_reddedilir():
-    """audit K5: <5 strike -> ValueError."""
+    """audit K5: <5 strike -> KuyrukOlasiligiHatasi."""
     kontratlar = _ornek_kontratlar()[:2]
-    with pytest.raises(ValueError, match="[Yy]etersiz"):
+    with pytest.raises(KuyrukOlasiligiHatasi, match="[Yy]etersiz"):
         hesapla(kontratlar, spot=765.96, risksiz_oran=0.03775,
                 vade="2026-10-16", degerleme_tarihi="2026-09-08")
+
+
+def test_eslesmeyen_vade_KeyError_DEGIL_ACIK_HATAYLA_reddedilir():
+    """final-review I2: hicbir kontrat istenen vadeyle eslesmezse (sifir
+    satir kalir) hesapla() KeyError DEGIL KuyrukOlasiligiHatasi firlatmali -
+    eski davranis, bos DataFrame'de chain['last_price'] erisiminin
+    KeyError firlatmasiydi (sutunlar bile yoktu)."""
+    kontratlar = _ornek_kontratlar()
+    for k in kontratlar:
+        k["expiration"] = "2099-01-16"   # istenen vadeyle HICBIR ESLESME yok
+    with pytest.raises(KuyrukOlasiligiHatasi, match="Yetersiz opsiyon verisi"):
+        hesapla(kontratlar, spot=765.96, risksiz_oran=0.03775,
+                vade="2026-10-16", degerleme_tarihi="2026-09-08")
+
+
+def test_eksik_fiyatli_kontrat_SESSIZCE_ATLANIR():
+    """final-review I4: last_trade_price None olan TEK bir kontrat tum
+    zinciri dusurmemeli - yalnizca o satir atlanir, geri kalani islenir."""
+    kontratlar = _ornek_kontratlar()
+    kontratlar[0]["last_trade_price"] = None
+    df = openbb_zincirini_oipd_bicimine_cevir(kontratlar, vade="2026-10-16")
+    assert len(df) == len(kontratlar) - 1
+    assert df["last_price"].isnull().sum() == 0
 
 
 def test_determinizm_ayni_girdi_ayni_cikti():

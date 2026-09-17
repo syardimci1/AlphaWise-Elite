@@ -696,6 +696,7 @@ async def dex_vanna(
 # sayaci) TASINMAZ - alphawise-elite-ff'nin bu dosyada olctugu sizinti
 # deseni burada TEKRARLANMAZ.
 import kuyruk_olasiligi as _ko
+from kuyruk_olasiligi import KuyrukOlasiligiHatasi
 
 KUYRUK_ONBELLEK_TTL = int(os.getenv("KUYRUK_TTL", "900"))  # 15 dk
 
@@ -743,7 +744,7 @@ async def kuyruk_olasiligi_ucu(ticker: str, vade: str):
     try:
         sonuc = _ko.hesapla(zincir, spot=spot, risksiz_oran=0.03775,
                             vade=vade, degerleme_tarihi=date.today().isoformat())
-    except ValueError as e:
+    except KuyrukOlasiligiHatasi as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception:
         raise HTTPException(status_code=502, detail="risk-notr dagilim hesaplanamadi")
