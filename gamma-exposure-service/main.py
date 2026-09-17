@@ -737,6 +737,7 @@ async def health():
 # kotadan dusuyor (olculdu: 25 -> 24); ayrica bu servis FlashAlpha yanitini
 # hic ayristirmadigi icin kontrat bazli veri zaten elimizde yoktu.
 import dex_vanna as _dv
+import zincir_istatistik as _zi
 
 OPENBB_TABAN = os.getenv("OPENBB_URL", "http://openbb:8000")
 DEX_ONBELLEK_TTL = int(os.getenv("DEX_TTL", "900"))   # 15 dk
@@ -791,11 +792,21 @@ async def dex_vanna(
     if not spot:
         raise HTTPException(status_code=502, detail="dayanak fiyati bulunamadi")
 
+    # 24.08.2026: betimleyici zincir sayimlari FILTREDEN ONCE alinir.
+    # min_acik_pozisyon filtresi bu istatistikleri yapisal olarak bozar —
+    # acik pozisyonu 0 olup hacmi olan kontratlar "yeni pozisyon aciliyor"
+    # vekilinin en guclu halidir ve filtre tam onlari eler. Ayrintili gerekce
+    # zincir_istatistik.py basindadir.
+    zincir_sayimlari = _zi.zincir_istatistikleri(zincir)
+
     if min_acik_pozisyon:
         zincir = [k for k in zincir
                   if (k.get("open_interest") or 0) >= min_acik_pozisyon]
 
     sonuc = _dv.maruziyet_hesapla(zincir, spot)
+    # Ayri anahtar altinda tutulur; dex_vanna ciktisinin mevcut alanlarina
+    # KARISTIRILMAZ (test_dex_vanna.py o alanlara birebir assertion yaziyor).
+    sonuc["zincir_istatistikleri"] = zincir_sayimlari
     sonuc["ticker"] = t
     sonuc["kaynak"] = "openbb-service /derivatives/options/chains (yfinance) — UCRETSIZ"
     sonuc["flashalpha_kotasi_tuketildi"] = False
