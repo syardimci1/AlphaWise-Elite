@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // market-data-service icin sunucu-tarafi proxy — DIGER 4 route'la (congress/
 // insider/13f/finra) AYNI kalip.
@@ -15,7 +15,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // hicbirinde NEXT_PUBLIC_ ile dogrudan servis adresi yok. Bu route, PriceChart'i
 // da ayni guvenli/tutarli kaliba tasir.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -27,5 +27,6 @@ export async function GET(
     yol: `/price/${encodeURIComponent(t)}`,
     zamanAsimiMs: 30_000,
     servisAdi: 'Market Data',
+    kimlik: istekKimligi(req),
   })
 }

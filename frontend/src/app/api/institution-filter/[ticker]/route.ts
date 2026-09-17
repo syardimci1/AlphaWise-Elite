@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // Institution Filter — LLMQuant uzerinden 13F kurumsal sahiplik.
 //
@@ -10,7 +10,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // Bu durum dashboard'da GIZLENMEZ; kullaniciya kredinin bittigi ve bazi
 // sorgularin bu yuzden bos donecegi acikca soylenir.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -24,5 +24,6 @@ export async function GET(
     yol: `/holders/${encodeURIComponent(t)}?top=8`,
     zamanAsimiMs: 60_000,
     servisAdi: 'Institution Filter (LLMQuant)',
+    kimlik: istekKimligi(req),
   })
 }

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // DEX / GEX / Vanna — opsiyon maruziyeti (gamma-exposure-service /dex-vanna).
 //
@@ -12,7 +12,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // ZAMAN ASIMI: soguk hesap olculdu (AAPL, 2.418 kontrat) ~20-40 sn; sicak
 // (Redis, TTL 900 sn) <1 sn. 120 sn genis bir pay birakir.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -24,5 +24,6 @@ export async function GET(
     yol: `/dex-vanna/${encodeURIComponent(t)}`,
     zamanAsimiMs: 120_000,
     servisAdi: 'Opsiyon Maruziyeti (DEX/GEX/Vanna)',
+    kimlik: istekKimligi(req),
   })
 }

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { oturumCereziVarMi, oturumDogrula } from '@/lib/oturum'
+import {
+  KULLANICI_BASLIGI,
+  KIRACI_BASLIGI,
+  SISTEM_KIRACI,
+  basliklariTemizle,
+  type KiraciSinifi,
+} from '@/lib/kiraci'
 
 // ============================================================================
 // HIZ SINIRLAMA (rate limiting) — 23.08.2026
@@ -69,6 +76,22 @@ const SINIFLAR = {
 } as const
 
 type Sinif = keyof typeof SINIFLAR
+
+// ============================================================================
+// KIRACI KIMLIGI VE KULLANICI BAZLI KOVA — 16.09.2026
+// ============================================================================
+// Baslik ADLARI burada DEGIL, src/lib/kiraci.ts'te tanimlidir. Nedeni olculmus
+// bir hatadir: iki ayri tasarim ayni sabiti farkli degerlerle tanimlayinca
+// middleware bir ad yaziyor, tuketici baska bir ad okuyor ve zincir HICBIR
+// HATA VERMEDEN kopuyordu. Tek kaynak bunu derleme hatasina cevirir.
+//
+// ON KOVA CARPANI — bkz. middleware() ASAMA 1/2.
+// Dogrulama ONCESI kova, kredi paylastirmak icin DEGIL, Supabase dogrulama
+// cagrisini selden korumak icindir; bu yuzden tavani sinif tavaninin bu kati
+// kadardir. Es zamanli mesru kullanici sayisi icin birakilan paydir.
+// Bugun Supabase'de 2 kullanici var; 4 kat pay, dashboard'in olculen es
+// zamanli istek sayisina dokunmadan kimlik sunucusuna giden yuke ust sinir koyar.
+const ON_KOVA_CARPANI = 4
 
 // 23.08.2026 GUVENLIK DUZELTMESI — yuzde-kodlama ile SINIF ATLATMA:
 // Next.js App Router catch-all segmentlerini ([...yol]) route'a vermeden ONCE
@@ -155,8 +178,12 @@ function temizle(simdi: number) {
   }
 }
 
-function izinVar(anahtar: string, sinif: Sinif, simdi: number) {
-  const { dakikada, patlama } = SINIFLAR[sinif]
+// 16.09.2026: `carpan` eklendi. ASAMA 1 (on kova) ayni sinif profilini kullanir
+// ama tavani carpan katidir; ASAMA 2 (kullanici kovasi) carpan=1 ile BUGUNKU
+// olculmus tavanlari AYNEN uygular. SINIFLAR tablosuna DOKUNULMADI.
+function izinVar(anahtar: string, sinif: Sinif, simdi: number, carpan = 1) {
+  const dakikada = SINIFLAR[sinif].dakikada * carpan
+  const patlama = SINIFLAR[sinif].patlama * carpan
   const oranSaniyede = dakikada / 60
   let kova = KOVALAR.get(anahtar)
   if (!kova) {
@@ -194,13 +221,21 @@ function kimlikReddi(sebep: string) {
 }
 
 export async function middleware(req: NextRequest) {
+  // --- TAKLIT KORUMASI (16.09.2026) — HER SEYDEN ONCE, KOSULSUZ ---
+  // Kiraci basliklarini ISTEMCI de gonderebilir. Middleware her yolda kendi
+  // degerini yazsa bile, yazmadigi TEK bir dal kalirsa (asagidaki `!sinif`
+  // dali gibi) istemcinin uydurdugu deger asagi akisa gecerdi. Bu yuzden
+  // silme islemi dallanmadan ONCE yapilir; sonra guvenli deger yazilir.
+  const temizBasliklar = basliklariTemizle(req)
+
   const yol = yoluCoz(req.nextUrl.pathname)
   const sinif = sinifBelirle(yol)
-  if (!sinif) return NextResponse.next()
+  // Sinifi olmayan yol (pratikte yalnizca tam '/api') hicbir kontrolden
+  // gecmez — ama taklit edilmis baslik yine de TEMIZLENMIS olarak gecer.
+  if (!sinif) return NextResponse.next({ request: { headers: temizBasliklar } })
 
   const simdi = Date.now()
   temizle(simdi)
-  const anahtar = `${istemciKimligi(req)}|${sinif}`
   // 23.08.2026: beyaz liste disi MAA yolu JETON HARCAMADAN reddedilir.
   if (!maaYoluGecerli(yol)) {
     return NextResponse.json(
@@ -217,15 +252,14 @@ export async function middleware(req: NextRequest) {
   // (ayni tuzak MAA beyaz listesinde de bulunup duzeltilmisti).
   if (!oturumCereziVarMi(req)) return kimlikReddi('cerez_yok')
 
-  const { izin, kalan, bekle } = izinVar(anahtar, sinif, simdi)
   // 23.08.2026: X-RateLimit-Limit `dakikada` degerini bildiriyordu ama ANLIK
   // tavan `patlama`; istemci Limit=60 / Remaining=19 gibi tutarsiz bir cift
   // goruyordu. Ikisi de ayri ayri bildirilir.
   const limit = SINIFLAR[sinif].dakikada
   const anlikTavan = SINIFLAR[sinif].patlama
 
-  if (!izin) {
-    return NextResponse.json(
+  const asiriIstek = (bekle: number, kalan: number, asama: string) =>
+    NextResponse.json(
       {
         hata: 'Cok fazla istek',
         detay:
@@ -239,25 +273,58 @@ export async function middleware(req: NextRequest) {
           'Retry-After': String(bekle),
           'X-RateLimit-Limit': String(limit),
           'X-RateLimit-Anlik-Tavan': String(anlikTavan),
-          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Remaining': String(kalan),
           'X-RateLimit-Sinif': sinif,
+          // Hangi asamanin kilitledigi OLCULEBILIR olmali, tahmin edilmemeli.
+          'X-RateLimit-Asama': asama,
         },
       },
     )
-  }
 
-  const yanit = NextResponse.next()
+  // --- HIZ SINIRI, ASAMA 1/2: ON KOVA (dogrulama ONCESI) ---
+  // Amaci kredi paylastirmak DEGIL, asagidaki Supabase dogrulama cagrisini
+  // selden korumaktir. Anahtari BUGUNKU istemciKimligi()'dir (taklit
+  // edilemez 'ortak', ya da GUVENILIR_VEKIL=1 ise vekil IP'si) ve tavani
+  // ON_KOVA_CARPANI katidir; boylece mesru es zamanli kullanicilari
+  // kilitlemez ama sinirsiz dogrulama cagrisina da izin vermez.
+  const onKova = izinVar(`on:${istemciKimligi(req)}|${sinif}`, sinif, simdi, ON_KOVA_CARPANI)
+  if (!onKova.izin) return asiriIstek(onKova.bekle, 0, 'on')
 
   // --- KIMLIK, ADIM 2/2: jetonu Supabase'e DOGRULAT ---
   // Cerezin varligi yetmez; cerez istemci tarafindan yazilabilir. Imza ve
-  // sure kontrolu kimlik sunucusunda yapilir. Hiz sinirlamasindan SONRA
-  // gelir, cunku bu adim ag cagrisi yapar ve sinirsiz tekrarlanmamalidir.
-  const oturum = await oturumDogrula(req, yanit)
+  // sure kontrolu kimlik sunucusunda yapilir. On kovadan SONRA gelir, cunku
+  // bu adim ag cagrisi yapar ve sinirsiz tekrarlanmamalidir.
+  //
+  // GECICI YANIT: oturumDogrula tazelenen oturum cerezlerini verilen yanita
+  // YAZAR (oturum.ts setAll). Nihai yanit ancak kullanici kimligi bilindikten
+  // SONRA kurulabildigi icin once gecici bir nesneye yazdirilir, sonra o
+  // cerezler nihai yanita KOPYALANIR. Kopyalama atlanirsa oturum sessizce duser.
+  const gecici = NextResponse.next()
+  const oturum = await oturumDogrula(req, gecici)
   if (!oturum.gecerli) return kimlikReddi(oturum.sebep)
+
+  const kullaniciId = oturum.kullaniciId ?? SISTEM_KIRACI
+  // Kimlik (KIM) ile kiraci sinifi (NE TUR CAGIRAN) AYRI kavramlardir.
+  // Tek degere yigmak, sinifa bakan asagi akis suzgeclerini devre disi birakir.
+  const kiraciSinifi: KiraciSinifi = oturum.kullaniciId ? 'kullanici' : 'sistem'
+
+  // --- HIZ SINIRI, ASAMA 2/2: KULLANICI KOVASI (gercek adalet kovasi) ---
+  // Anahtari dogrulanmis kullanici kimligidir: TAKLIT EDILEMEZ ve sayisi
+  // gercek kullanici sayisiyla sinirlidir, yani KOVALAR haritasini sisirme
+  // yolu da kapalidir. Carpan 1 — bugunku olculmus tavanlar AYNEN gecerli.
+  const kova = izinVar(`k:${kullaniciId}|${sinif}`, sinif, simdi)
+  if (!kova.izin) return asiriIstek(kova.bekle, 0, 'kullanici')
+
+  // --- NIHAI YANIT: kimlik asagi akisa TASINIR ---
+  temizBasliklar.set(KULLANICI_BASLIGI, kullaniciId)
+  temizBasliklar.set(KIRACI_BASLIGI, kiraciSinifi)
+  const yanit = NextResponse.next({ request: { headers: temizBasliklar } })
+  // Tazelenen oturum cerezlerini gecici yanittan TASI (aksi halde oturum duser).
+  for (const cerez of gecici.cookies.getAll()) yanit.cookies.set(cerez)
 
   yanit.headers.set('X-RateLimit-Limit', String(limit))
   yanit.headers.set('X-RateLimit-Anlik-Tavan', String(anlikTavan))
-  yanit.headers.set('X-RateLimit-Remaining', String(kalan))
+  yanit.headers.set('X-RateLimit-Remaining', String(kova.kalan))
   yanit.headers.set('X-RateLimit-Sinif', sinif)
   return yanit
 }

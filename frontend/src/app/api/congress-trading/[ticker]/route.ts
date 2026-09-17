@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // Congress Trading — ABD Kongre uyelerinin STOCK Act kapsaminda acikladigi
 // hisse islemleri.
@@ -9,7 +9,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // yedegine dusuyor ve calisiyor (200 kayit). Yanittaki source/fallback_used
 // alanlari dashboard'da gosterilir; hangi kaynaktan geldigi gizlenmez.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -22,5 +22,6 @@ export async function GET(
     yol: `/trades/${encodeURIComponent(t)}?limit=10`,
     zamanAsimiMs: 90_000,
     servisAdi: 'Congress Trading',
+    kimlik: istekKimligi(req),
   })
 }

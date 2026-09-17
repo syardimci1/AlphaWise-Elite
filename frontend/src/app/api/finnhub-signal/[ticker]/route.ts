@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // Finnhub Sinyal Servisi (8280) — sirket takvimi + haber yogunlugu.
 //
@@ -10,7 +10,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // sinirliyor ve pay dolarsa AG CAGRISI YAPMADAN 429 donuyor — o durumda
 // bu proxy 429'u oldugu gibi kullaniciya tasir.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -22,5 +22,6 @@ export async function GET(
     yol: `/sirket/${encodeURIComponent(t)}`,
     zamanAsimiMs: 60_000,
     servisAdi: 'Sirket Takvimi ve Haber Yogunlugu',
+    kimlik: istekKimligi(req),
   })
 }

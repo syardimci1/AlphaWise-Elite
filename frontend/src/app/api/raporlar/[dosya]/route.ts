@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { GUVENLI_AD, raporKapisi, kokDizinCoz } from '@/lib/raporlar'
 
 // Tek bir PDF raporu indirir.
 //
@@ -11,13 +12,17 @@ import path from 'path'
 //   3. Cozulmus yolun rapor dizininin ICINDE kaldigi dogrulanir (realpath
 //      ile sembolik bag kacisi da kapatilir).
 // Ayrica dizin konteynere SALT OKUNUR baglanir.
-const RAPOR_DIZINI = process.env.REPORTS_DIR || '/reports'
-const GUVENLI_AD = /^[A-Za-z0-9][A-Za-z0-9_-]*\.pdf$/
-
+// 17.09.2026: dizin/ad sozlesmesi lib/raporlar.ts'te tekillestirildi ve
+// ROL KAPISI eklendi. Uc katmanli yol asimi korumasi AYNEN korundu.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ dosya: string }> }
 ) {
+  // Katman 0 — YETKI. Ad dogrulamasindan bile ONCE: yetkisiz cagirana
+  // "bu ad gecerli ama dosya yok" ile "ad gecersiz" ayrimi sizdirilmasin.
+  const red = await raporKapisi(req)
+  if (red) return red
+
   const { dosya } = await params
 
   // Katman 1 — desen kontrolu (URL cozulmesi sonrasi)
@@ -38,7 +43,7 @@ export async function GET(
   }
 
   // Katman 3 — cozulmus yol rapor dizininin icinde mi
-  const kokDizin = await fs.realpath(RAPOR_DIZINI).catch(() => path.resolve(RAPOR_DIZINI))
+  const kokDizin = await kokDizinCoz()
   const tamYol = path.resolve(kokDizin, guvenliAd)
   if (tamYol !== path.join(kokDizin, guvenliAd)) {
     return NextResponse.json({ error: 'Erisim reddedildi' }, { status: 403 })
@@ -69,6 +74,7 @@ export async function GET(
     if (err?.code === 'ENOENT') {
       return NextResponse.json({ error: 'Dosya bulunamadi' }, { status: 404 })
     }
-    return NextResponse.json({ error: 'Dosya okunamadi: ' + err.message }, { status: 500 })
+    console.warn('[raporlar] okuma hatasi:', err?.message)
+    return NextResponse.json({ error: 'Dosya okunamadi' }, { status: 500 })
   }
 }

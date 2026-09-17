@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 
 // SEC Form 4 — sirket ici yonetici islemleri. SEC'in resmi acik verisi,
 // ucretsiz ve anahtarsiz. Adres yalnizca sunucuda tutulur.
@@ -9,7 +9,7 @@ import { servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
 // hissede) — yon kalibrasyonu bu evrende matematiksel olarak mumkun degil.
 // Kisit servis tarafinda kod seviyesinde uygulanir (lambda_sifir.py).
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params
@@ -23,5 +23,6 @@ export async function GET(
     yol: `/insider/${encodeURIComponent(t)}/ozet`,
     zamanAsimiMs: 90_000,
     servisAdi: 'SEC Form 4 (iceriden islem)',
+    kimlik: istekKimligi(req),
   })
 }

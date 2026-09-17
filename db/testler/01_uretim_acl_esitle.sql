@@ -28,6 +28,30 @@ REVOKE ALL ON SEQUENCE public.user_portfolios_id_seq FROM anon, authenticated, s
 GRANT ALL ON public.profiles        TO anon, authenticated, service_role;
 GRANT ALL ON public.user_portfolios TO anon, authenticated, service_role;
 GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.user_portfolios_id_seq TO anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------
+-- VARSAYILAN YETKİLER (pg_default_acl) — 17.09.2026 eklendi
+-- ---------------------------------------------------------------------
+-- NEDEN: Üretimde `public` şemasında açılan HER YENİ nesne, istemci
+-- rollerine AÇIK doğuyor. Canlı ölçüldü (geri alınan işlemde gerçek
+-- CREATE TABLE ile):
+--   yeni tablo    → {postgres=arwdDxtm, anon=arwdDxtm, authenticated=arwdDxtm, ...}
+--                   ve relrowsecurity = FALSE
+--   yeni sequence → {anon=rwU, authenticated=rwU, ...}
+--   yeni fonksiyon→ proacl `=X/postgres` (PUBLIC EXECUTE)
+-- Kaynağı `pg_default_acl`'deki 6 satır (postgres + supabase_admin sahipliğinde).
+--
+-- Bu blok olmadan izole ortam üretimi TEMSİL ETMEZ: 007 gibi yeni nesne
+-- kuran göçlerin sertleştirme bloklarını test etmek imkânsız olurdu, çünkü
+-- çıplak bir PostgreSQL'de yeni tablo zaten kapalı doğar ve REVOKE'lar
+-- "zaten kapalıydı" diye sessizce geçerdi. Bu, HATA_HAFIZASI H-1'in
+-- (izole ortam üretimi temsil etmiyordu) aynı sınıf tekrarı olurdu.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT, UPDATE, USAGE ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
 COMMIT;
 
 -- DOĞRULAMA: 3 nesnenin de ACL'i üretimdekiyle aynı KÜME olmalı.
