@@ -176,22 +176,76 @@ def test_CESITLENDIRME_LISTEYI_KISALTMAZ():
 
 
 # =====================================================================
-# 4. 'paket' PARAMETRESI - OLCULEN KOPUKLUK
+# 4. 'paket' PARAMETRESI - KOPUKLUK 18.09.2026'da KAPATILDI
 # =====================================================================
+#
+# TARIHCE. 04.09.2026'da burada ters yonlu bir test duruyordu
+# (test_PAKET_PARAMETRESI_MODELS_FOR_A_ILETILMIYOR): run_cascade paket
+# degerini main.py:1001'den ALIYOR ama _models_for cagrilarinin hicbirine
+# ILETMIYORDU, yani paket=basic sessizce premium secimi kullaniyordu.
+# O test kusuru bilerek kayda geciriyor ve "duzeltilirse kirilsin, durum
+# yeniden degerlendirilsin" diyordu. 18.09.2026'da kopukluk kapatildi;
+# asagidaki testler artik DOGRU davranisi sabitler.
+#
+# OLCULEN ETKI (18.09.2026, canli Redis): davranis degisikligi BUGUN
+# sifir. Paket-bazli anahtar hic yazilmadigi icin premium/basic/standard
+# ucu de ayni listeyi donduruyor. Duzeltme, o anahtarlar yazilmaya
+# baslandiginda paketin dikkate alinmasini saglar.
 
-def test_PAKET_PARAMETRESI_MODELS_FOR_A_ILETILMIYOR():
-    """OLCULEN KUSUR (04.09.2026): run_cascade(paket=...) parametresini
-    main.py'den ALIR (main.py:1001) ama _models_for cagrilarinin HICBIRINE
-    iletmez - dordu de varsayilan 'premium' kullanir.
+def test_PAKET_TUM_MODELS_FOR_CAGRILARINA_ILETILIYOR():
+    """run_cascade icindeki HER _models_for cagrisi paket'i iletmeli.
 
-    Yani /narrative-verified?paket=basic cagrisi SESSIZCE premium model
-    secimi kullanir. Bu test o kopuklugu KAYDA GECIRIR; duzeltilirse
-    test kirilir ve durum yeniden degerlendirilir."""
+    Kaynak duzeyinde bakilir, cunku asil risk ileride EKLENECEK bir
+    cagrinin paket'i unutmasidir - davranis testi yalnizca calistirdigi
+    yollari gorur, bu kontrol hepsini gorur."""
     import inspect
     kaynak = inspect.getsource(cascade.run_cascade)
-    cagrilar = [s for s in kaynak.splitlines() if "_models_for(" in s]
+    cagrilar = [s.strip() for s in kaynak.splitlines() if "_models_for(" in s]
     assert cagrilar, "run_cascade icinde _models_for cagrisi bulunamadi"
-    paket_ileten = [s for s in cagrilar if "paket" in s]
-    assert not paket_ileten, (
-        "paket parametresi artik iletiliyor - bu OLUMLU bir degisiklik "
-        "olabilir; testi ve cascade.py'deki notu birlikte guncelleyin")
+    iletmeyen = [s for s in cagrilar if "paket" not in s]
+    assert not iletmeyen, (
+        f"{len(iletmeyen)} cagri paket'i iletmiyor (paket=basic sessizce "
+        f"premium secimi kullanir): {iletmeyen}")
+
+
+def test_PAKET_MODEL_REGISTRY_E_DEGISMEDEN_ULASIYOR(monkeypatch):
+    """_models_for, aldigi paket'i model_registry'ye aynen gecirmeli."""
+    gorulen = []
+    monkeypatch.setattr(model_registry, "get_candidates_for_role_paketli",
+                        lambda rol, paket="premium": gorulen.append((rol, paket)) or ["m/x"])
+    cascade._models_for("analyst", cascade.ANALYST_MODELS, "basic")
+    assert gorulen == [("analyst", "basic")], gorulen
+
+
+def test_PAKET_UCTAN_UCA_run_cascade_UZERINDEN_TASINIYOR(monkeypatch):
+    """EN ONEMLI KONTROL: paket, run_cascade'e verildigi haliyle model
+    secimine ulasiyor mu?
+
+    LLM cagrilari saplanir - bu test HICBIR kredi harcamaz ve aga cikmaz.
+
+    KAPSAM (mutasyonla olculdu, 18.09.2026): bu kurulumda DORT cagri da
+    gercekten calisir. Saplamanin dondurdugu "SORUN YOK" metni anayasa
+    kontrolunden gectigi icin duzeltme denemesi dali da tetikleniyor;
+    yalnizca o dordunci cagridan paket kaldirildiginda test KIRILDI.
+
+    Yine de kaynak duzeyi testi (yukarida) gereksiz degil: bu testin
+    kapsami saplamanin metnine BAGLI - metin degisirse duzeltme dali
+    calismayabilir. Hangi yollar calisirsa calissin geçerli olan garanti
+    oradadir."""
+    import asyncio
+    gorulen = []
+    monkeypatch.setattr(model_registry, "get_candidates_for_role_paketli",
+                        lambda rol, paket="premium": gorulen.append((rol, paket)) or ["m/x"])
+
+    async def sahte_cagri(models, prompt):
+        return "SORUN YOK", "m/x"
+    monkeypatch.setattr(cascade, "_call_with_fallback", sahte_cagri)
+
+    asyncio.run(cascade.run_cascade(
+        "TEST", {}, {}, {}, False, "basic"))
+
+    assert gorulen, "model secimi hic cagrilmadi - test bir sey olcmuyor"
+    paketler = {p for _, p in gorulen}
+    assert paketler == {"basic"}, (
+        f"paket tasinmadi; model secimine ulasan degerler: {paketler}")
+    assert "analyst" in {r for r, _ in gorulen}, gorulen

@@ -70,6 +70,16 @@ async def _call_llm(model: str, prompt: str, timeout: float = 30.0):
 # kriterleriyle en uygun modelleri secer (Redis'te 26 saat onbellekli).
 # HERHANGI bir sorunda (Redis yok, API erisilemez, bos liste) asagidaki
 # SABIT listelere geri duser - mevcut calisan davranis hicbir kosulda bozulmaz.
+#
+# paket (18.09.2026 duzeltmesi): run_cascade'in aldigi paket degeri asagidaki
+# DORT cagrinin da ucuncu argumani olarak iletilir. 18.08-18.09 arasinda
+# iletilmiyordu; paket=basic sessizce premium secimini kullaniyordu.
+# OLCULEN ETKI (18.09.2026, canli Redis): bugun sifir. Paket-bazli anahtar
+# (alphawise:model_registry:<paket>) hic yazilmadigi icin load_paket_registry
+# her paket icin None donuyor ve _ham_adaylar eski ortak yola dusuyor - uc
+# rolde de premium/basic/standard birebir ayni listeyi veriyor. Bu duzeltme,
+# o anahtarlari yazan model_selector_agent.py devreye girdiginde paketin
+# gercekten dikkate alinmasini saglar.
 def _models_for(role: str, fallback: list, paket: str = "premium") -> list:
     try:
         dynamic = model_registry.get_candidates_for_role_paketli(role, paket)
@@ -159,7 +169,7 @@ ILGILI METODOLOJI REFERANSI (dahili bilgi tabanindan):
 
 {ANALYST_INSTRUCTIONS}"""
     with izle("analyst", ticker=ticker):
-        draft, analyst_model = await _call_with_fallback(_models_for("analyst", ANALYST_MODELS), analyst_prompt)
+        draft, analyst_model = await _call_with_fallback(_models_for("analyst", ANALYST_MODELS, paket), analyst_prompt)
     print(f"[TIMING] Analyst asamasi: {time.time()-_t0:.1f}s")
     if not draft:
         return {"ticker": ticker, "error": f"Analyst asamasi basarisiz: {analyst_model}"}
@@ -178,7 +188,7 @@ TASLAK: {draft}
 Eger SORUN YOKSA sadece "SORUN YOK" yaz. Sorun varsa madde madde listele."""
     _t1 = time.time()
     with izle("critic", ticker=ticker):
-        critic_feedback, critic_model = await _call_with_fallback(_models_for("critic", CRITIC_MODELS), critic_prompt)
+        critic_feedback, critic_model = await _call_with_fallback(_models_for("critic", CRITIC_MODELS, paket), critic_prompt)
     print(f"[TIMING] Critic asamasi: {time.time()-_t1:.1f}s")
     if not critic_feedback:
         critic_feedback = "Critic asamasi basarisiz oldu, kontrolsuz devam ediliyor."
@@ -201,7 +211,7 @@ Elestiride belirtilen sorunlari mutlaka duzelt.
 " + sema_talimati() + sema_talimati_vadeli() + " "al"/"sat"/"tavsiye" kelimelerini kullanma."""
     _t2 = time.time()
     with izle("master", ticker=ticker):
-        final_text, master_model = await _call_with_fallback(_models_for("master", MASTER_MODELS), master_prompt)
+        final_text, master_model = await _call_with_fallback(_models_for("master", MASTER_MODELS, paket), master_prompt)
     print(f"[TIMING] Master asamasi: {time.time()-_t2:.1f}s")
     print(f"[TIMING] TOPLAM kaskad: {time.time()-_t0:.1f}s")
     if not final_text:
@@ -230,7 +240,7 @@ Elestiride belirtilen sorunlari mutlaka duzelt.
             "al/sat/tavsiye/koru/kar realize et/firsat/ralli/roket kelimelerini KESINLIKLE kullanma."
         )
         with izle("retry_duzeltme", ticker=ticker, deneme=retry_count):
-            retry_text, retry_model = await _call_with_fallback(_models_for("master", MASTER_MODELS), fix_prompt)
+            retry_text, retry_model = await _call_with_fallback(_models_for("master", MASTER_MODELS, paket), fix_prompt)
         if retry_text:
             final_text = retry_text
             master_model = f"{master_model} (duzeltme denemesi {retry_count}: {retry_model})"
