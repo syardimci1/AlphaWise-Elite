@@ -194,6 +194,33 @@ ama güvence **iddia ettiği kadar dar değil**.
 
 ---
 
+## R-16 (yeni) — emir yüzeyini açan anahtar üç serviste ortaktı ✅
+
+**Ölçüldü ve KAPATILDI (20.09.2026, `285970b`) — dağıtım bekliyor.**
+
+Tek sır (`sha256[:16] = 7e02b48a6b016f45`) üç serviste bulundu:
+`godmode-execution` (kendi kapısı, **emir yüzeyi dahil**),
+`godmode-paper-trading` (istemci kimliği, **yalnızca okuma** için —
+`src/main.py:576,639`) ve `alphawise-oanda` (kendi servis kapısı, ilgisiz
+işlev). Üçü de `alphawise-net` üzerinde. Yani yalnızca değerlendirme
+okumak için anahtar tutan bir servisin ortamını okuyan biri **emir
+gönderebiliyordu**.
+
+Çözüm deponun kendi desenidir (`IZLENEN_LISTE_ANAHTARI`): emir uçları
+artık `verify_execute` çağırıyor ve `EXECUTE_ADMIN_KEY` tanımlıysa
+**yalnızca** onu kabul ediyor. Tanımsızsa `ADMIN_KEY`'e düşer — dağıtım
+tek başına davranışı değiştirmez.
+
+Ayrım iki yönlü ölçüldü: okuma anahtarı emir ucunda **401**, emir anahtarı
+okuma ucunda **401**, okuma anahtarı okuma ucunda **200**.
+
+- **Olasılık:** kesin (ölçüldü) · **Etki:** orta (paper parası) · **Y11:** hayır
+- **Kalan:** sırrın kendisinin döndürülmesi. `ADMIN_KEY` hâlâ üç serviste
+  ortak — ama artık emir gönderemiyor. Ayrı bir işlem.
+- Ayrıntı ve uygulama adımları: `ANAHTAR_AYRIMI_PLANI.md`
+
+---
+
 ## R-14 (yeni) — deponun kendi korunan listesi Y1'den geniş
 
 `strateji.py` ve `risk.py` tam blob SHA-1 ile kilitli (`korunan_dosya_manifesti.py:27`),
