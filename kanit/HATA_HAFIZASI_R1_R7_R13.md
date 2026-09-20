@@ -83,7 +83,24 @@ düzeltildi — yanlış bir tespitin sürüm geçmişinde kalıcılaşmaması i
 
 ---
 
-## Yöntem notu — bu dört hatanın ortak yanı
+## Hata #5 (KÖK NEDEN) — `grep` bu ortamda `.gitignore`'a uyuyor
+
+| alan | içerik |
+|---|---|
+| **Madde** | R-16 / sır döndürme |
+| **Tarih** | 20.09.2026 |
+| **Faz** | ölçüm (tekrar eden) |
+| **Belirti** | `/opt/alphawise` kökünden yapılan **her** özyinelemeli arama boş dönüyordu. Beş kez "X hiçbir yerde yok" sonucu ürettim; en az ikisi yanlıştı. |
+| **Kök neden** | Bu ortamda `grep` GNU grep **değil**, `ugrep`'i `--ignore-files` bayrağıyla saran bir **kabuk fonksiyonu**. `--ignore-files`, `.gitignore` dosyalarına uyar. `/opt/alphawise/.gitignore` ise beyaz liste mantığındadır ve ilk kuralı `/*` — yani **her şeyi yoksayar**. Sonuç: ağacın neredeyse tamamı taranmadan atlanıyor, komut **0,069 saniyede** boş dönüyor. |
+| **Neden fark edilmedi** | 0 sonuç, "yok" ile "bakılmadı" arasında ayrım yapmaz. Alt dizinlerden (`…/godmode-paper-trading-service`) yapılan aramalar çalıştığı için araç sağlam görünüyordu. |
+| **Düzeltme** | `command grep` (fonksiyonu atlayıp gerçek GNU grep'i çağırır) ya da `find … -print0 \| xargs -0 grep`. Doğru araçla arandığında `GODMODE_ADMIN_KEY`'i sunan **iki ek yer** bulundu (paper-trading'in kendi frontend'i ve bir araç betiği) — dar aramada görünmüyorlardı. |
+| **Tur** | 5 (aynı sınıf hata beşinci kez) |
+| **Ders** | Hata #2 ve #4'ün "pozitif kontrol yap" dersi **doğruydu ama yetersizdi**: pozitif kontrol hatayı *gösteriyordu*, ben ise her seferinde aramayı biraz değiştirip devam ediyordum. Asıl gereken, **aracın neden böyle davrandığını** bulmaktı. Semptomu beş kez tedavi ettim, nedeni bir kez aradım ve bulundu. |
+| **Önlem** | Bu depoda ağaç geneli arama için **her zaman** `command grep` ya da `find+xargs`. Pozitif kontrol başarısız olursa aramayı değiştirmeden **önce aracı sorgula**. |
+
+---
+
+## Yöntem notu — bu beş hatanın ortak yanı
 
 İkisi de **yanlış olumsuz** üretti ve ikisi de "ölçtüm" kılığındaydı. Bir
 komut çalıştırmış olmak, doğru şeyi ölçtüğüm anlamına gelmiyor. Y9 "kanıtsız

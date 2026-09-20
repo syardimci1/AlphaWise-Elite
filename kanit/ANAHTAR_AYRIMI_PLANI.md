@@ -22,11 +22,14 @@ ulaşabiliyorlar.
 ortamını okuyan biri **emir gönderebilir**. `alphawise-oanda` ise emir
 yüzeyiyle hiç ilgisi olmadığı hâlde onu açan bir sırrı taşıyor.
 
-> Ayrı bir gözlem: `supabase-rest` ve `alphawise-phoenix` de
-> `ADMIN_KEY`/`GODMODE_ADMIN_KEY` taşıyor ama **farklı** bir değerle
-> (`9257354c1ddb41bd`) ve `supabase-rest` farklı bir ağda. Bu, buradaki
-> yeniden kullanımın parçası değil; muhtemelen ortak bir `.env`'den miras.
-> Ayrıca değerlendirilmeli.
+> ⚠ **DÜZELTME (20.09.2026, aynı gün).** Burada önce şöyle yazmıştım:
+> *"`supabase-rest` ve `alphawise-phoenix` de bu değişkenleri taşıyor ama
+> farklı bir değerle (`9257354c1ddb41bd`)."* **Bu ölçüm yanlıştı.**
+> `docker exec … sh -c` ile yapılmıştı; bu iki konteynerde `sh` bulunmuyor,
+> komut başarısız oluyordu ve ben çıkan çıktıyı gerçek anahtar sandım.
+> `docker inspect .Config.Env` ile bakıldığında ikisinde de
+> `ADMIN_KEY`/`GODMODE_ADMIN_KEY` **hiç yok** (0 eşleşme). Sırrı taşıyan
+> canlı konteyner sayısı **tam olarak üç**tür.
 
 ---
 
