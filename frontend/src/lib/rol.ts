@@ -20,6 +20,7 @@
 // ve çağıran ERİŞİMİ REDDETMELİDİR. Burada "bilinmiyorsa izin ver" yoktur.
 
 import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { cerezAdi } from './oturum'
 
@@ -79,4 +80,42 @@ export function izinliRoller(ham: string | undefined, varsayilan: Rol[]): Rol[] 
   // Boş/bozuk yapılandırma sessizce "herkese açık"a dönüşmemeli:
   // hiçbir geçerli rol ayıklanamadıysa varsayılana DÜŞÜLÜR, izin verilmez.
   return ayiklanan.length > 0 ? ayiklanan : varsayilan
+}
+
+/**
+ * SAF karar fonksiyonu — test edilebilirlik için ağdan ayrılmıştır.
+ * `rol` null ise (okunamadı) erişim REDDEDİLİR: fail-closed.
+ *
+ * 20.09.2026'da `raporlar.ts`'ten BURAYA taşındı. Gerekçe: ikinci bir uç
+ * (bildirimler) aynı karara ihtiyaç duydu ve güvenlik kararının iki kopyası
+ * sessizce ayrışır — biri sıkılaştırılıp öteki unutulur. `raporlar.ts` onu
+ * yeniden dışa aktarmayı sürdürüyor, böylece mevcut çağıranlar etkilenmedi.
+ */
+export function rolKarari(rol: Rol | null, izinli: Rol[]): boolean {
+  if (!rol) return false
+  return izinli.includes(rol)
+}
+
+/**
+ * GENEL rol kapısı. İzin varsa `null`, yoksa doğrudan döndürülecek yanıt.
+ *
+ * Kapı, korunan kaynağa (dosya sistemi, aşağı akış servisi) dokunmadan ÖNCE
+ * çağrılmalıdır: yetkisiz bir çağırana kaynağın durumu hakkında zamanlama
+ * üzerinden bilgi sızmasın.
+ *
+ * Sebep DIŞARIYA ayrıntılı verilmez ("rol okunamadı" ile "rolün yetmiyor"
+ * ayrımı çağırana bilgi olur); teşhis için `X-Rol` başlığında tutulur.
+ */
+export async function rolKapisi(
+  req: NextRequest,
+  izinli: Rol[],
+  hata: string,
+  detay: string,
+): Promise<NextResponse | null> {
+  const rol = await rolOku(req)
+  if (rolKarari(rol, izinli)) return null
+  return NextResponse.json(
+    { hata, detay },
+    { status: 403, headers: { 'X-Rol': rol ?? 'okunamadi' } },
+  )
 }

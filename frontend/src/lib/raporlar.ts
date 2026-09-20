@@ -38,7 +38,12 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { rolOku, izinliRoller, type Rol } from './rol'
+import { rolKapisi, rolKarari, izinliRoller, type Rol } from './rol'
+
+// `rolKarari` 20.09.2026'da `rol.ts`'e taşındı (ikinci bir uç aynı karara
+// ihtiyaç duydu). Buradan yeniden dışa aktarılıyor ki mevcut çağıranlar ve
+// testler etkilenmesin; tanım artık TEK yerde.
+export { rolKarari }
 
 /** Dizin konteynere SALT OKUNUR bağlanır; bu rotalar hiçbir koşulda yazmaz. */
 export const RAPOR_DIZINI = process.env.REPORTS_DIR || '/reports'
@@ -67,31 +72,17 @@ export function raporRolleri(): Rol[] {
 }
 
 /**
- * SAF karar fonksiyonu — test edilebilirlik için ağdan ayrılmıştır.
- * `rol` null ise (okunamadı) erişim REDDEDİLİR: fail-closed.
- */
-export function rolKarari(rol: Rol | null, izinli: Rol[]): boolean {
-  if (!rol) return false
-  return izinli.includes(rol)
-}
-
-/**
- * Rol kapısı. İzin varsa `null`, yoksa doğrudan döndürülecek bir yanıt verir.
+ * Rapor rol kapısı. İzin varsa `null`, yoksa doğrudan döndürülecek bir yanıt.
  *
  * Kapı, dosya sistemine dokunmadan ÖNCE çağrılmalıdır: yetkisiz bir çağırana
  * dizinin dolu mu boş mu olduğu hakkında zamanlama üzerinden bilgi sızmasın.
  */
 export async function raporKapisi(req: NextRequest): Promise<NextResponse | null> {
-  const rol = await rolOku(req)
-  if (rolKarari(rol, raporRolleri())) return null
-  // Sebep DIŞARIYA ayrıntılı verilmez ("rol okunamadı" ile "rolün yetmiyor"
-  // ayrımı çağırana bilgi olur); teşhis için başlıkta tutulur.
-  return NextResponse.json(
-    {
-      hata: 'Bu belgelere erisim yetkiniz yok',
-      detay: 'Raporlar sistem belgeleridir ve yalnizca yetkili rollere aciktir.',
-    },
-    { status: 403, headers: { 'X-Rol': rol ?? 'okunamadi' } },
+  return rolKapisi(
+    req,
+    raporRolleri(),
+    'Bu belgelere erisim yetkiniz yok',
+    'Raporlar sistem belgeleridir ve yalnizca yetkili rollere aciktir.',
   )
 }
 
