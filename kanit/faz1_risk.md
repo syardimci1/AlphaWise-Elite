@@ -14,7 +14,7 @@ senkron kaybı riski.
 | **R-6** | Testler kırılır: `defter` 16, `izlenen` 9 test dosyasında (birleşim 24/75). 8 test `izlenen.DOSYA_YOLU`'nu monkeypatch ediyor — yol ContextVar'dan türerse yamalar **sessizce işlevsiz** kalır | **kesin** | orta | hayır | Test uyarlaması iş kalemine dahil; ayrıca `defter.kur()` `CREATE TABLE IF NOT EXISTS` olduğu için mevcut deftere sütun **eklenmez** — ayrı ALTER göçü gerekir (`defter.py:107-132` deseni) |
 | **R-7** | `/oz-iyilestirme/uygula` küresel strateji parametrelerini değiştirir → bir kullanıcının ayarı ötekinin karar kodunu değiştirir | orta | yüksek | (a) EVET — ayar geri alınabilir ama kararlar üretilmiş olur | Uçları kiracı başına ayır **veya** admin'e kilitle |
 | **R-8** | Kullanıcı B yaratılamıyor — `signUp` tüm depoda **0** | **kesin** | **FAZ 3 BLOKE** | hayır | Sağlama yolu (davet/kayıt) bu işin ön koşulu; Supabase admin API ile tohum kullanıcı |
-| **R-9** | Bildirim tek sabit numaraya gidiyor → A'nın portföyü B'ye | orta | yüksek (dışarı sızma) | (c) EVET — WhatsApp'a gitti mi geri alınamaz | Alıcı kavramı eklenene kadar bildirimleri kullanıcı verisinden **arındır** |
+| **R-9** ✅⟳ | **DÜZELTİLDİ ve KISMEN KAPATILDI (20.09.2026, `04bf9be`).** Özgün metin yanlıştı — ölçüm düzeltti. Aşağıya bakın. | — | — | hayır (ölçüldü) | Rol kapısı `/api/bildirimler`'e eklendi |
 | **R-10** | Yedek/geri yükleme kiracı-körü; tek dosya. "Kullanıcı verimi sil" (KVKK) karşılanamaz | düşük (bugün) | orta | (a) EVET | Yol bazlı kiracılık bunu da kolaylaştırır (dosya başına yedek/silme) |
 | **R-11** | `user_portfolio` tablosu yaratılırsa, `maa/src/main.py:127`'deki filtresiz `DELETE FROM user_portfolio` **tüm kullanıcıların** satırlarını siler. Dosya korunuyor → düzeltilemez | orta | **kritik** | (a) EVET | Tabloyu **hiç yaratma**; yeni tablo BAŞKA adla kurulsun. İsim tuzağı: TimescaleDB `user_portfolio` (yok) ≠ Supabase `user_portfolios` (var) |
 | **R-12** | `/api/maa/memory/{ticker}` cognee'nin tek global dataset'ini beyaz listeden açıyor → tarayıcıdan çapraz-kullanıcı karar geçmişi | **kesin** | yüksek | hayır | Dataset adına kullanıcı boyutu eklemek `maa/src/main.py:1082`'yi (KORUNAN) değiştirmeyi gerektirir **veya** ucu beyaz listeden çıkarmak (korumasız, tek satır) |
@@ -28,6 +28,67 @@ R-10 (a), R-11 (a), R-13 (c)**. Bunların her biri için standart Y5 revert
 
 Geri kalanlar (R-2…R-6, R-8, R-12) standart Y5 ile karşılanır.
 
+
+## R-9 — özgün metin YANLIŞTI, ölçüm düzeltti (20.09.2026)
+
+Özgün iddia şuydu: *"Bildirim tek sabit numaraya gidiyor → A'nın portföyü
+B'ye."* Ölçüldüğünde iki ayrı şeyin karıştırıldığı görüldü.
+
+**WhatsApp ayağı — risk yok, zaten kapalı.** `olay-tarayici-service/src/
+bildirim.py` okundu: mesaj şablonu sabit ve yalnızca **kamuya açık olay**
+bilgisi taşıyor (SEC 8-K kodları, kurum yayın başlığı, kaynak). Portföy,
+pozisyon, kullanıcı kimliği **geçmiyor**. Ayrıca `BILDIRIM_ETKIN` varsayılanı
+`0` — servis ayağa kalktığında kimseye mesaj gitmiyor. Yani "A'nın portföyü
+B'ye" senaryosu bu yolda **kurulamaz**.
+
+**Asıl açık başka yerdeydi — aynı adı taşıyan besleme ucu.**
+`/api/bildirimler`, `bildirim-service`'in topladığı **sistem işletim
+kayıtlarını** rol kapısı olmadan her oturum açmış kullanıcıya veriyordu.
+Canlı yanıttan ölçülen satırlar:
+
+```
+[ana:claude1] ALARM: claude CALISMIYOR (pane_pid=3960990).
+              Yeniden baslatiliyor: 'claude --continue' (ardisik deneme: 1/6)
+godmode_paper MUTABAKAT ALARMI: Kontrol calistirilamadi ...
+              ALARM: Haftalik egitim BASARISIZ veya HIC TETIKLENMEDI!
+```
+
+Yani otomasyonun tmux pencerelerinde yeniden başlatılan Claude oturumlarıyla
+yürüdüğü, süreç kimlikleri ve iç sağlık durumu. Sınıf **SİSTEM-GİZLİ**,
+kullanıcı-gizli değil — raporlar ucunda kapatılanla aynı sınıf. Çapraz
+kullanıcı sızıntısı **değil** (içerik herkes için aynı), bu yüzden kullanıcı
+bazlı bölmek yanlış çözüm olurdu; doğru çözüm rol kapısıdır.
+
+**Alınan ders:** risk kaydına yazılan bir cümle, ölçülmeden önce bir
+**hipotezdir**. R-9 iki ayrı bileşeni ("bildirim") tek ada bağladığı için
+gerçek açığı gizliyordu.
+
+---
+
+## ÖLÇÜLEN DIŞ YÜZEY (20.09.2026) — tüm risk sıralamasını etkiler
+
+Bugüne kadarki risk metinleri örtük olarak "kaydolan ilk gerçek müşteri"
+senaryosuna dayanıyordu. O senaryonun ön koşulu ölçüldü ve **bugün
+sağlanmıyor**:
+
+| ölçüm | sonuç |
+|---|---|
+| `0.0.0.0`'ta dinleyen | yalnızca **22/tcp (sshd)** ve **443/tcp (stunnel4)** |
+| stunnel 443 nereye bağlıyor | `connect = 127.0.0.1:22` — yani **SSH**, web değil |
+| `alphawise-frontend` | `127.0.0.1:3000` — **dışarı açık değil** |
+| diğer ~60 servis | hepsi `127.0.0.1` |
+| dış tünel (cloudflared/ngrok/tailscale/frp) | **yok** |
+| ufw | 22, 80, 443, 60000:61000/udp açık; 80'de dinleyen yok |
+
+**Sonuç:** uygulamanın bugün **kamuya açık bir yüzeyi yok**; erişim host'a
+SSH gerektiriyor. Bu, yapılan düzeltmeleri gereksiz kılmaz — yayına
+alınmadan önce kapatılmaları doğru olan şeydir — ama **aciliyet
+sıralamasını** değiştirir: R-7 ve R-13 bugün ne tarayıcıdan ne internetten
+erişilebilir durumda (ayrıca hiçbir frontend rotası o uçlara referans
+vermiyor, ölçüldü). Kalan gerçek yüzeyleri host kabuğu erişimi ve
+`alphawise-net` içinden SSRF'tir — farklı bir sınıf.
+
+---
 
 ## R-14 (yeni) — deponun kendi korunan listesi Y1'den geniş
 
