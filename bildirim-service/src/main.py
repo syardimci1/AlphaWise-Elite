@@ -33,6 +33,12 @@ KAYNAKLAR = [
     {"kaynak": "oz_iyilestirme", "ad": "Öz-İyileştirme Bekçisi",
      "dosya": "logs/oz_iyilestirme_bekcisi.jsonl", "bicim": "jsonl",
      "aciklama": "Servis sağlığı ve öneri üreticisinin yapılandırılmış kaydı."},
+    # R-15 (20.09.2026): kâğıt işlem defteri DÜZLEŞİNCE haber verir. Bekçi
+    # yalnızca durum DEĞİŞİMİNDE yazar (her turda değil), yoksa bu merkez
+    # aynı satırla dolar ve gerçek olay görünmez olurdu.
+    {"kaynak": "r15_gecis", "ad": "R-15 Geçiş Bekçisi",
+     "dosya": "logs/ALARM_r15_gecis.log", "bicim": "metin",
+     "aciklama": "Ayrı paper hesabına geçiş penceresinin açılıp kapanması."},
 ]
 
 def _kaynak_tekille(sonuclar):
