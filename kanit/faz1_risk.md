@@ -12,13 +12,13 @@ senkron kaybı riski.
 | **R-4** ✅ | **KAPATILDI (İ-7, `efb013d`)** — kullanıcı başına sayaç + yumuşak pay (%80). Kod hazır, servis henüz dağıtılmadı. Önceki hâli: | **kesin** | yüksek — ödeme yapan müşteriye hizmet reddi | hayır | Redis sayacına kullanıcı boyutu (`gex:quota:<user>:<gun>`); **Bütçe Onay Kuralı bunsuz uygulanamaz** |
 | **R-5** | Proxy önbelleği çapraz sızıntı + maliyet atfı bozulması (15 dk TTL, yol anahtarlı) | **kesin** | yüksek | hayır | Önbellek anahtarına kullanıcı eklemek krediyi **ikiye katlar** → bütçe kuralıyla çatışır. Alternatif: paylaşılan sonucu açıkça "paylaşılan" olarak işaretlemek |
 | **R-6** | Testler kırılır: `defter` 16, `izlenen` 9 test dosyasında (birleşim 24/75). 8 test `izlenen.DOSYA_YOLU`'nu monkeypatch ediyor — yol ContextVar'dan türerse yamalar **sessizce işlevsiz** kalır | **kesin** | orta | hayır | Test uyarlaması iş kalemine dahil; ayrıca `defter.kur()` `CREATE TABLE IF NOT EXISTS` olduğu için mevcut deftere sütun **eklenmez** — ayrı ALTER göçü gerekir (`defter.py:107-132` deseni) |
-| **R-7** | `/oz-iyilestirme/uygula` küresel strateji parametrelerini değiştirir → bir kullanıcının ayarı ötekinin karar kodunu değiştirir | orta | yüksek | (a) EVET — ayar geri alınabilir ama kararlar üretilmiş olur | Uçları kiracı başına ayır **veya** admin'e kilitle |
+| **R-7** ✅⟳ | **ÖLÇÜLDÜ, İDDİA ÇÜRÜTÜLDÜ (20.09.2026, `0bef966`).** Uçlar zaten admin kapısının arkasındaydı; gerçek boşluk kapının testsiz olmasıydı. Aşağıya bakın. | — | — | hayır (ölçüldü) | Servis tarafı kapı testle kilitlendi |
 | **R-8** | Kullanıcı B yaratılamıyor — `signUp` tüm depoda **0** | **kesin** | **FAZ 3 BLOKE** | hayır | Sağlama yolu (davet/kayıt) bu işin ön koşulu; Supabase admin API ile tohum kullanıcı |
 | **R-9** ✅⟳ | **DÜZELTİLDİ ve KISMEN KAPATILDI (20.09.2026, `04bf9be`).** Özgün metin yanlıştı — ölçüm düzeltti. Aşağıya bakın. | — | — | hayır (ölçüldü) | Rol kapısı `/api/bildirimler`'e eklendi |
 | **R-10** | Yedek/geri yükleme kiracı-körü; tek dosya. "Kullanıcı verimi sil" (KVKK) karşılanamaz | düşük (bugün) | orta | (a) EVET | Yol bazlı kiracılık bunu da kolaylaştırır (dosya başına yedek/silme) |
 | **R-11** | `user_portfolio` tablosu yaratılırsa, `maa/src/main.py:127`'deki filtresiz `DELETE FROM user_portfolio` **tüm kullanıcıların** satırlarını siler. Dosya korunuyor → düzeltilemez | orta | **kritik** | (a) EVET | Tabloyu **hiç yaratma**; yeni tablo BAŞKA adla kurulsun. İsim tuzağı: TimescaleDB `user_portfolio` (yok) ≠ Supabase `user_portfolios` (var) |
 | **R-12** | `/api/maa/memory/{ticker}` cognee'nin tek global dataset'ini beyaz listeden açıyor → tarayıcıdan çapraz-kullanıcı karar geçmişi | **kesin** | yüksek | hayır | Dataset adına kullanıcı boyutu eklemek `maa/src/main.py:1082`'yi (KORUNAN) değiştirmeyi gerektirir **veya** ucu beyaz listeden çıkarmak (korumasız, tek satır) |
-| **R-13** | `godmode-execution` ikinci emir yüzeyi — `/mode-a/execute` tek global ADMIN_KEY ile gerçek emir gönderiyor | orta | **kritik** | (c) EVET | Bu servis Faz 1 envanterine sonradan girdi; kapsam kararı gerekiyor |
+| **R-13** ⚠⟳ | **ÖLÇÜLDÜ, KISMEN DÜZELTİLDİ (20.09.2026, `c8b3563`).** "Gerçek emir" nitelemesi yanlıştı (`paper=True` sabit). Dört kapı yerindeydi ve testle kilitlendi. **Ama iki emir yüzeyi aynı broker hesabını paylaşıyor** ve bu, boyutlandırma tabanını bağlıyor. Aşağıya bakın. | kesin (ölçüldü) | orta | hayır — paper parası | Kapılar kilitlendi; sermaye tabanı paylaşımı **AÇIK** (D3) |
 
 ## Tek yönlü kapı özeti (Y11)
 
@@ -87,6 +87,101 @@ sıralamasını** değiştirir: R-7 ve R-13 bugün ne tarayıcıdan ne internett
 erişilebilir durumda (ayrıca hiçbir frontend rotası o uçlara referans
 vermiyor, ölçüldü). Kalan gerçek yüzeyleri host kabuğu erişimi ve
 `alphawise-net` içinden SSRF'tir — farklı bir sınıf.
+
+---
+
+## R-7 — iddia ölçümle çürütüldü (20.09.2026)
+
+Özgün iddia: *"`/oz-iyilestirme/uygula` küresel strateji parametrelerini
+değiştirir → bir kullanıcının ayarı ötekinin karar kodunu değiştirir."*
+
+Ölçüm, korumanın **iki katmanda zaten var** olduğunu gösterdi:
+
+1. **Servis:** dört `/oz-iyilestirme` ucunun dördü de `yetki(x_admin_key)`
+   çağırıyor. Canlı: anahtarsız `GET /oz-iyilestirme/durum` → `HTTP 401`.
+   `PAPER_ADMIN_KEY` üretimde tanımlı (48 karakter), yani kapı gerçek
+   doğrulama yapıyor ve fail-closed.
+2. **Proxy:** `godmode-paper-trading-service/frontend/.../paper/[...yol]/route.ts`
+   beyaz listesinde bu uçlar **hiç yok**; bilinmeyen yol `403`. Tek yazma
+   yolu (`islem-modu`) admin anahtarını değil dar liste anahtarını kullanıyor.
+
+**Gerçek boşluk asimetriydi:** proxy katmanı testle kilitliydi, servis
+katmanı değildi. `0bef966` ile kapatıldı (8 test, 2 mutasyon).
+
+---
+
+## R-13 — "gerçek emir" yanlıştı; asıl bulgu paylaşılan hesap
+
+**Düzeltilen niteleme:** `/mode-a/execute` gerçek para emri göndermiyor.
+`get_trading_client()` içinde `paper=True` **sabit kodlu** ve tek kurulum
+noktası (`godmode/execution/src/main.py:24`). Alpaca **paper** hesabı.
+
+**Yerinde bulunan dört kapı:** `paper=True` sabit · `/health` dışında 8 ucun
+8'inde `verify_admin` ilk ifade · `confirm` varsayılanı `False` ve kapı
+`submit_order`'dan önce · piyasa kapalıysa `BLOCKED_MARKET_CLOSED`.
+Hiçbiri testli değildi; `c8b3563` ile kilitlendi (13 test, 4 mutasyon).
+
+### Paylaşılan broker hesabı — ilk iddiam YANLIŞTI, geri alındı
+
+İki servis gerçekten aynı Alpaca paper hesabını kullanıyor
+(`PA30SBB6QS52`; `ALPACA_API_KEY` ile `ALPACA_PAPER_API_KEY`'in
+`sha256[:16]`'ları birebir `eb8885988aadb469`).
+
+Bunu önce *"belgelenmemiş bir bağlantı"* diye kaydettim. **Yanlıştı.**
+Paylaşım `godmode-paper-trading/src/main.py` içinde **altı ayrı yerde**
+belgeli ve etkileri tek tek ele alınmış:
+
+| satır | ne yapılmış |
+|---|---|
+| 343 | Hesap geneli değeri döndüren uç, *"bu değer godmode/execution gibi AYNI paper hesabını kullanan diğer servislerin pozisyonlarını da içerir"* notunu taşıyor |
+| 681-699 | Eski "defter == broker" kapısının **arıza** ürettiği ölçülmüş (NVDA/CAT/GOOGL/WDC kalıcı BEKLE) ve kapı düzeltilmiş |
+| 731-738 | Broker fazlası açıkça *"başka bir servise aittir"* diye etiketleniyor, ayrı alan olarak raporlanıyor |
+| 740-744 | Satış tarafında otorite broker: `etkin_adet = min(defter, broker)` |
+| 767-774 | **Toplam maruziyet bilerek DEFTERDEN hesaplanıyor**, broker hesap genelinden değil — gerekçesi ve 02.09.2026 ölçümü (`73.575`'i godmode/execution'a ait) yazılı |
+| 980-982 | Pozisyon karşılaştırması bilerek tek yönlü |
+
+Yani ekip bu bağlantıyı benden önce ölçmüş, niceliklendirmiş ve
+sınırlamış. Benim "boyutlandırma paylaşılan tabandan türüyor" cümlem de
+yanlıştı: maruziyet ve boyutlandırma defterden geliyor.
+
+### ⚠ R-15 (YENİ, AÇIK) — zarar eşiğinde pay/payda uyuşmazlığı
+
+Geriye **tek ve dar** bir gözlem kalıyor; bu, yukarıdaki altı yerin
+hiçbirinde ele alınmamış:
+
+```python
+# main.py:544, 1259
+pv = float(istemci().hesap().get("portfolio_value", 0))        # PAYLASILAN hesap
+zarar_durumu = risk.zarar_durumu_belirle(
+    pv, defter.kar_zarar({}, "US").get("gerceklesen_kar", 0.0)) # YALNIZCA defter
+
+# risk.py:125
+if gerceklesen_kar < 0 and abs(gerceklesen_kar) >= portfoy_degeri * 0.20:
+    return DURDURULMUS
+```
+
+**Pay defterden, payda paylaşılan hesaptan.** Ölçülen değerlerle:
+
+| | |
+|---|---|
+| eşik (`%20 × portfoy_degeri`) | **20.212 $** |
+| defterin bağlı sermayesi (MSFT) | **9.876 $** |
+| defterin gerçekleşen zararı | **0,00 $** |
+
+Yani "zarar eşiği aşılırsa sistem kendini kapatır" güvencesi, bu servisin
+kendi kitabının **iki katından fazla** bir zarara ayarlanmış durumda —
+pratikte bu servis için **tetiklenemez**. Tehlike üretmiyor (paydayı
+büyüten şey başkasının sermayesi, kendi emirlerini serbestleştirmiyor),
+ama güvence **iddia ettiği kadar dar değil**.
+
+- **Olasılık:** kesin (ölçüldü) · **Etki:** düşük-orta (paper parası;
+  kapı yanlış tarafa değil, gevşek tarafa kayıyor) · **Y11:** hayır
+- **Neden kapatılmadı:** `src/main.py` Y1 korumalı ve payda seçimini
+  değiştirmek bir ticaret sisteminin durdurma eşiğini değiştirir — **D3**.
+- **Seçenekler:** (a) paydayı defter sermayesinden türetmek (D3, korumalı
+  dosya); (b) iki yüzeye ayrı paper hesabı — kod değişikliği gerektirmez,
+  yalnızca altyapı; (c) bilinçli kabul edip **bu satırın yanına da** diğer
+  altı yerdeki gibi bir not düşmek — en ucuzu.
 
 ---
 
