@@ -1,7 +1,9 @@
 # R-15 — İKİ EMİR YÜZEYİNE AYRI PAPER HESABI (Seçenek B)
 
 **Tarih:** 20 Eylül 2026 · **Karar:** kullanıcı **B**'yi seçti
-**Durum:** ⏸ **KİMLİK BİLGİSİ BEKLİYOR** — kod tarafı hazır, kabul testi yazıldı
+**Yol:** **B2** — defter doğal olarak düzleşince geçilir (zorla kapatma yok)
+**Durum:** ⏸ **İKİ ÖN KOŞUL BEKLİYOR** — (1) ikinci hesabın anahtarları,
+(2) defterin düzleşmesi. Kod tarafı hazır; iki betik de yazıldı ve sınandı.
 
 ---
 
@@ -62,15 +64,36 @@ fark = defter(20) - broker(0) = 20 > 0
 Yani servis **emir gönderemez hâle gelir**. Bu bir arıza değil, tam olarak
 o kapının işi — ama geçişin bu durumda yapılmaması gerekir.
 
-**İki temiz yol var:**
+**KARAR (20.09.2026): B2** — defter doğal olarak düzleşene kadar beklenir,
+o pencerede geçilir. Pozisyon **zorla kapatılmaz**; sıfır zorlama, sıfır
+zorunlu K/Z. (Reddedilen alternatif B1: MSFT 20 bilinçli kapatılıp hemen
+geçilmesiydi — daha hızlı ama kâğıt K/Z realize ederdi.)
 
-| yol | ne gerektirir | maliyeti |
-|---|---|---|
-| **B1** — MSFT 20 bilinçli kapatılır, sonra geçilir | paper-trading'in kendi satış yolu (`emir_gonder(..., "SAT")`), kendi pozisyonu | K/Z **realize edilir** (kâğıt para) |
-| **B2** — defter doğal olarak düzleşene kadar beklenir, o pencerede geçilir | strateji pozisyonu kendi kapattığında geçmek | **sıfır zorlama**, ama zamanlama beklemeye bağlı |
+### B2 — düzleşme ne zaman gerçekleşir (ölçüldü 20.09.2026)
 
-B2 daha temiz; B1 daha hızlı. Karar kullanıcınındır — ikisi de bir **emir
-işlemi** içerdiği ve işleyen bir defteri etkilediği için otonom yapılmadı.
+MSFT'nin **gerçek bir çıkış planı** var:
+
+| | fiyat | pozisyonun kapanan payı | canlı fiyata uzaklık |
+|---|---|---|---|
+| canlı fiyat | **493,10** | — | — |
+| çıkış hedefi 1 | 517,75 | %40 | **+%5,00** |
+| çıkış hedefi 2 | 531,90 | %35 | +%7,87 |
+| çıkış hedefi 3 | 542,01 | %25 | +%9,92 |
+| **stop-loss** | **489,41** | %100 | **−%0,75** |
+
+Trailing stop hedef 1'de devreye giriyor, %3,5 takip.
+
+**Okuma:** hedeflerden yalnızca 1'ine ulaşmak defteri düzleştirmez
+(%40 kapanır). **Tam düzleşmenin en yakın yolu stop-loss** — yalnızca
+%0,75 uzakta. Yani pencere yakın zamanda açılabilir.
+
+**Pencere ne kadar kalır:** defterde toplam **8 işlem kaydı** var ve
+sonuncusu **01.09.2026**. Yani servis yavaş çalışıyor; düzleştikten sonra
+hemen yeni pozisyon açması beklenmiyor — pencere dar olmayacak.
+
+**Dikkat:** 44 sembol izleniyor ve hepsi `ACIK` (yeni risk alabilir). Yani
+düzleşme kalıcı değildir; yeni bir giriş defteri tekrar doldurabilir.
+Bu yüzden ön koşul **her geçişten hemen önce** yeniden ölçülmelidir.
 
 ---
 
@@ -96,8 +119,8 @@ Anahtarlar şu dosyada, **2 satır**:
 ## Uygulama adımları (kimlik bilgisi gelince)
 
 ```bash
-# 0) ON KOSUL: defter duz mu?
-docker exec godmode-paper-trading python3 -c "..."   # defter_pozisyonlari bos olmali
+# 0) ON KOSUL: defter duz mu?  (B2 dedektoru — cikis 0 beklenir)
+bash /opt/alphawise/commercial/AlphaWise-Elite/kanit/r15_gecis_hazir_mi.sh
 
 # 1) YEDEK
 cp /opt/alphawise/godmode-paper-trading-service/.env{,.r15_yedek}
@@ -120,6 +143,17 @@ komutu çalıştırılır. Kod değişmediği için `git revert` gerekmez.
 ---
 
 ## Kabul testi
+
+İki betik var ve ikisi de bugünkü durumda **doğru biçimde olumsuz** dönüyor:
+
+| betik | ne ölçer | bugünkü çıkış |
+|---|---|---|
+| `r15_gecis_hazir_mi.sh` | B2 ön koşulu: defter düz mü | **1** — `{"MSFT": 20.0}` var |
+| `r15_ayri_hesap_dogrula.sh` | sonuç: hesaplar ayrıldı mı | **1** — ikisi de `PA30SBB6QS52` |
+
+`r15_gecis_hazir_mi.sh` arıza-güvenlidir: broker okunamazsa `2` döner ve
+okunamayan bir defter **düz sayılmaz**. Karar mantığı dört senaryoda
+doğrulandı (pozisyon var / düz+açık / düz ama kapı engelli / okunamadı).
 
 `kanit/r15_ayri_hesap_dogrula.sh` — **bugün bilerek kırmızı**:
 
