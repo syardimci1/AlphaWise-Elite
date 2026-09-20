@@ -196,7 +196,7 @@ ama güvence **iddia ettiği kadar dar değil**.
 
 ## R-16 (yeni) — emir yüzeyini açan anahtar üç serviste ortaktı ✅
 
-**Ölçüldü ve KAPATILDI (20.09.2026, `285970b`) — dağıtım bekliyor.**
+**KAPATILDI ve YÜRÜRLÜKTE (20.09.2026, `285970b` + `0418269`).** `EXECUTE_ADMIN_KEY` üretildi ve uygulandı; ayrım canlı doğrulandı.
 
 Tek sır (`sha256[:16] = 7e02b48a6b016f45`) üç serviste bulundu:
 `godmode-execution` (kendi kapısı, **emir yüzeyi dahil**),

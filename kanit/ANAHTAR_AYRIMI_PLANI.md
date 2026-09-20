@@ -1,7 +1,7 @@
 # ANAHTAR YENİDEN KULLANIMI — emir yüzeyi için dar anahtar
 
 **Tarih:** 20 Eylül 2026
-**Durum:** kod hazır ve test edildi · ⏸ **dağıtım + yeni anahtar bekliyor**
+**Durum:** ✅ **UYGULANDI ve YÜRÜRLÜKTE** (20.09.2026) — `EXECUTE_ADMIN_KEY` tanımlı, ayrım canlı
 
 ---
 
@@ -167,6 +167,70 @@ listeye bağlıyor ve gerekçesi tam da bu sırdır:
 kontrolündeki bir adrese yönlendirilmek o anahtarı SIZDIRIRDI."*
 Dar anahtar bu korumanın yerini almaz, onu tamamlar: adres zehirlenmesi
 olsa bile sızacak anahtar artık **emir gönderemez**.
+
+---
+
+## UYGULAMA SONUCU (20.09.2026)
+
+Dağıtım iki adımda yapıldı ve **ikisi arasında bir kusur yakalandı**.
+
+### Adım 1 — kod dağıtıldı, davranış değişmedi
+
+`b7aed3d69804 → f9269ed5b4b7`, 6 sn recreate, 11 sn'de healthy.
+`EXECUTE_ADMIN_KEY` henüz tanımsız olduğu için `verify_execute` `ADMIN_KEY`'e
+düştü. Canlı doğrulandı: emir ucu + doğru anahtar → `200
+BLOCKED_MARKET_CLOSED` (piyasa kapalı, emir yok), yanlış/anahtarsız → 401.
+
+### Adım 2 — anahtar üretildi ve uygulandı
+
+`openssl rand -hex 24` (48 karakter, mevcut anahtarlarla aynı uzunluk),
+`sha256[:16] = 2d0ecb38828dfab0` — `ADMIN_KEY`'in `7e02b48a6b016f45`
+değerinden farklı olduğu doğrulandı. `.env`'e yorumuyla birlikte eklendi;
+`.env` `*.env` ve `.env.*` kurallarıyla git'te izlenmiyor, depo temiz
+kaldı. Yedek depo **dışına** alındı.
+
+### ⚠ ARADA YAKALANAN KUSUR — ve neden canlı doğrulama şarttı
+
+Anahtar tanımlandıktan sonraki ilk doğrulamada bir satır beklenenden
+farklı çıktı:
+
+```
+mode-b + EMIR anahtari -> HTTP 401 {"detail":"Admin key gerekli ve dogru olmali"}
+```
+
+Mesajın **"Admin key"** demesi teşhisin anahtarıydı — bu `verify_execute`'un
+değil `verify_admin`'in metni. Sebep: emir uçları önizleme için **içeride**
+okuma uçlarını çağırıyor (`mode_a_analyze` / `mode_b_signals`) ve
+çağıranın `x_admin_key`'ini olduğu gibi iletiyordu. Dış kapı geçiliyor,
+**iç kapı** reddediyordu.
+
+**Mode-a'da bu maskelenmişti:** piyasa saati kapısı o satırdan önce
+dönüyor, dolayısıyla hafta sonu yapılan doğrulamada mode-a `200`
+veriyordu. Piyasa açılınca aynı şekilde kırılacaktı — yani kusur,
+yalnızca piyasa açıkken ortaya çıkan bir arıza olarak üretimde
+bekleyebilirdi.
+
+Düzeltme (`0418269`): iç delegasyona servisin **kendi** `ADMIN_KEY`'i
+geçilir. Çağıran yetkisini `verify_execute` ile zaten kanıtlamıştır; bu
+dışarıdan gelen bir istek değil, aynı süreç içinde fonksiyon çağrısıdır.
+Test eklendi (`test_IC_DELEGASYON_cagiranin_anahtarini_ILETMEZ`) — piyasa
+kapalıyken de piyasa-açık arızasını yakalıyor. 18 → 20 test, tam takım
+119 → **121**, mutasyonla doğrulandı.
+
+### Düzeltme sonrası canlı durum
+
+```
+mode-a + OKUMA -> 401        mode-a + EMIR -> 200 BLOCKED_MARKET_CLOSED
+mode-b + OKUMA -> 401        mode-b + EMIR -> 200 (onizleme dondu)
+okuma  + OKUMA -> 200        okuma  + EMIR -> 401      <- ayrim IKI YONLU
+```
+
+Broker: emir **166 → 166**, pozisyon **12 → 12** — hiçbir emir
+gönderilmedi. Kredi harcanmadı: MAA'ya 0 karar/LLM çağrısı.
+
+**Ders:** AST testi kabloyu kanıtlar, davranışı kanıtlamaz. Bu kusur
+yalnızca canlı istekle görünür oldu — ve mode-a'da onu bile maskeleyen
+bir kapı vardı. İki uç noktayı da ayrı ayrı sınamak belirleyici oldu.
 
 ---
 
