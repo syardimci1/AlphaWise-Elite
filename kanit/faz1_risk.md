@@ -178,10 +178,19 @@ ama güvence **iddia ettiği kadar dar değil**.
   kapı yanlış tarafa değil, gevşek tarafa kayıyor) · **Y11:** hayır
 - **Neden kapatılmadı:** `src/main.py` Y1 korumalı ve payda seçimini
   değiştirmek bir ticaret sisteminin durdurma eşiğini değiştirir — **D3**.
-- **Seçenekler:** (a) paydayı defter sermayesinden türetmek (D3, korumalı
-  dosya); (b) iki yüzeye ayrı paper hesabı — kod değişikliği gerektirmez,
-  yalnızca altyapı; (c) bilinçli kabul edip **bu satırın yanına da** diğer
-  altı yerdeki gibi bir not düşmek — en ucuzu.
+- **KARAR (20.09.2026): seçenek (b)** — iki yüzeye ayrı paper hesabı.
+  Kod değişikliği gerektirmiyor; `godmode-paper-trading-service/.env`
+  içinde **2 satır**. Plan ve kabul testi: `R15_AYRI_HESAP_PLANI.md` ve
+  `r15_ayri_hesap_dogrula.sh`.
+- **Göç yönü ölçümle belirlendi:** **paper-trading** taşınır, execution
+  değil. Gerekçe: `godmode/execution`'da kapatma/satış ucu **yok**; o
+  taşınırsa açtığı 11 pozisyon (74.121 $) eski hesapta sistem içinde
+  kapatılamaz hâlde kalır ve paper-trading'in `pv`'si onları saymaya
+  devam eder — yani R-15 kapanmaz.
+- **Ön koşul:** geçiş anında defter DÜZ olmalı. Aksi hâlde
+  `fark = defter(20) − broker(0) > 0` → *"DEFTER FAZLA IDDIA EDIYOR
+  (hayalet pozisyon). Emir gonderilmez."* kapısı devreye girer.
+- **Durum:** ⏸ ikinci Alpaca paper hesabının anahtar çifti bekleniyor.
 
 ---
 
