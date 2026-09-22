@@ -215,8 +215,10 @@ Ayrım iki yönlü ölçüldü: okuma anahtarı emir ucunda **401**, emir anahta
 okuma ucunda **401**, okuma anahtarı okuma ucunda **200**.
 
 - **Olasılık:** kesin (ölçüldü) · **Etki:** orta (paper parası) · **Y11:** hayır
-- **Kalan:** sırrın kendisinin döndürülmesi. `ADMIN_KEY` hâlâ üç serviste
-  ortak — ama artık emir gönderemiyor. Ayrı bir işlem.
+- **Kalan yoktu:** sır da döndürüldü (22.09.2026). `godmode-execution` ile
+  `godmode-paper-trading` yeni ortak bir sır (`a1e3b558…`), `alphawise-oanda`
+  ise **kendi ayrı sırrı** (`0f302ba5…`) kullanıyor. Kabul testi 6/6;
+  ayrıntı `SIR_DONDURME_PLANI.md`.
 - Ayrıntı ve uygulama adımları: `ANAHTAR_AYRIMI_PLANI.md`
 
 ---

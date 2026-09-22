@@ -1,6 +1,7 @@
 # SIR DÖNDÜRME PLANI — paylaşılan `ADMIN_KEY` (`7e02b48a…`)
 
-**Tarih:** 20 Eylül 2026 · **Durum:** ⏸ plan hazır, **uygulanmadı**
+**Tarih:** 20 Eylül 2026 · **Uygulandı:** 22 Eylül 2026
+**Durum:** ✅ **A ve B UYGULANDI ve DOĞRULANDI**
 **Ön koşul:** R-16 dar anahtar ayrımı ✅ uygulandı (`285970b` + `0418269`)
 
 ---
@@ -147,6 +148,76 @@ gerekmez. Döndürme A'da **iki** dosya birlikte geri alınmalıdır.
 (doğrulayıcı eski VEYA yeni değeri kabul eder), sunan taraf güncellenir,
 sonra eski değer kaldırılır. Üç adımlı, penceresiz ama üç dağıtım
 gerektirir.
+
+---
+
+## UYGULAMA SONUCU (22.09.2026 09:38–09:41 CEST)
+
+Koşullar plana uygundu: **piyasa kapalı** (03:40 EDT), kâğıt işlem cron
+penceresinin (16/18/20/21) dışında, üç konteyner de healthy.
+
+### Döndürme A — godmode çifti
+
+```
+yedek  -> yedekler/godmode_execution.env.rot_20260922_093853
+          yedekler/paper_trading.env.rot_20260922_093853
+execution/.env      satir 23  ADMIN_KEY          degistirildi
+paper-trading/.env  satir  3  GODMODE_ADMIN_KEY  degistirildi
+eski 7e02b48a6b016f45  ->  yeni a1e3b5583be729d0 (ikisi de AYNI)
+recreate penceresi: 14 sn  (exec 17 sn'de, paper 15 sn'de healthy)
+```
+
+### Döndürme B — oanda
+
+```
+yedek  -> yedekler/oanda.env.rot_20260922_094042
+oanda-service/.env  satir 14  ADMIN_KEY  degistirildi
+eski 7e02b48a6b016f45  ->  yeni 0f302ba52303a258 (godmode ciftinden FARKLI)
+recreate: 6 sn'de healthy
+```
+
+### Kabul testi — 6/6
+
+| kontrol | sonuç |
+|---|---|
+| execution ile paper-trading çift olarak eşit | ✅ |
+| oanda **farklı** bir sır kullanıyor | ✅ |
+| execution eski sırdan farklı | ✅ |
+| paper-trading eski sırdan farklı | ✅ |
+| oanda eski sırdan farklı | ✅ |
+| `EXECUTE_ADMIN_KEY` **dokunulmadı** (`2d0ecb38…`) | ✅ |
+
+### Davranış doğrulaması (canlı)
+
+```
+execution  okuma ucu + ESKI anahtar  -> 401     <- dondurme etkili
+execution  okuma ucu + YENI anahtar  -> 200
+execution  emir  ucu + YENI okuma    -> 401     <- R-16 ayrimi KORUNDU
+execution  emir  ucu + EMIR anahtari -> 200 BLOCKED_MARKET_CLOSED
+oanda      /account  + ESKI anahtar  -> 401
+oanda      /account  + YENI anahtar  -> 200
+oanda      /health   (acik)          -> 200
+paper-trading mutabakat: tutarli=True, defter {"MSFT": 20.0}, emir_engelli=False
+```
+
+Filo: 0 sağlıksız. Başlama zamanı değişen **yalnızca** hedeflenen üç
+konteyner.
+
+### Bilinçli olarak yapılmayan
+
+`karar.godmode_degerlendirmesi` ile uçtan uca okuma çağrısı **yapılmadı**.
+`/godmode/assessment` gövdesinde `maa` / `narrative` / `decide` izleri var
+ve LLM yolu olabilir; bütçe kuralı gereği çağrılmadı. Kimlik katmanı
+kanıtı zaten yeterli: execution yeni anahtarı LLM'siz bir uçta
+(`/godmode/methodology`) kabul ediyor ve paper-trading birebir aynı değeri
+taşıyor (env sha karşılaştırması).
+
+### Geri alma
+
+Yedekler `/opt/alphawise/yedekler/` altında, `600` izinle, depo dışında
+(`/opt/alphawise/.gitignore` `/*` ile zaten yoksayılı). Geri almak için
+ilgili `.env` kopyalanır ve konteyner `--no-deps` ile yeniden kurulur;
+Döndürme A'da **iki** dosya birlikte geri alınmalıdır.
 
 ---
 
