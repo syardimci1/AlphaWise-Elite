@@ -20,9 +20,22 @@ import { rolKapisi, izinliRoller, type Rol } from '@/lib/rol'
 // Capraz-kullanici sizintisi DEGIL (icerik herkes icin ayni), bu yuzden
 // kullanici bazli bolmek yanlis cozum olurdu; dogru cozum rol kapisidir.
 //
-// URUN ETKISI SIFIR: olculdu, hicbir arayuz bileseni bu ucu cagirmiyor
-// (frontend/src altinda "api/bildirimler" aramasi 0 eslesme). Kapi bugun
-// calisan bir ekrani bozmuyor.
+// ⚠ DUZELTME (22.09.2026). Burada once "URUN ETKISI SIFIR: hicbir arayuz
+// bileseni bu ucu cagirmiyor" yaziyordu. YANLISTI. O arama yalnizca
+// frontend/src altinda yapilmisti; cagiran bilesen o agacin DISINDA:
+//     frontend/components/BildirimMerkezi.tsx:28  fetch('/api/bildirimler')
+// ve dashboard'da render ediliyor (src/app/dashboard/page.tsx:1079).
+//
+// GERCEK URUN ETKISI: role='user' bir hesapta bu widget veri yerine
+// "Bu beslemeye erisim yetkiniz yok" mesajini gosterir. Bilesen hatayi
+// zarifce ele aliyor (BildirimMerkezi.tsx:30 -> d?.hata ? setHata(...))
+// yani ekran COKMEZ, yalnizca bu kutu bilgi yerine yetki metni yazar.
+//
+// Kapi yine de DOGRU karardir: icerik sistem isletim kaydidir (tmux
+// pencere adlari, surec kimlikleri, ic saglik durumu) ve bir musteriye
+// gitmemelidir. Degisen sey karar degil, o kararin URUN MALIYETININ
+// dogru raporlanmasidir - "sifir" degil, "yetkisiz rolde kutu bilgi
+// yerine yetki mesaji gosterir".
 //
 // Varsayilan admin+partner: bugunku iki hesap erisimini aynen korur.
 // BILDIRIM_IZINLI_ROLLER ile daraltilabilir (orn. yalnizca "admin").

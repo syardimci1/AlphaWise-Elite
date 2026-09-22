@@ -100,7 +100,30 @@ düzeltildi — yanlış bir tespitin sürüm geçmişinde kalıcılaşmaması i
 
 ---
 
-## Yöntem notu — bu beş hatanın ortak yanı
+## Hata #6 — "ürün etkisi sıfır" dedim; çağıran bileşen arama kapsamının dışındaydı
+
+| alan | içerik |
+|---|---|
+| **Madde** | R-9 (bildirim merkezi rol kapısı) |
+| **Tarih** | 20.09.2026'da yapıldı, **22.09.2026'da yakalandı** |
+| **Faz** | uygulama → iki gün sonra, ilgisiz bir konuşmada |
+| **Belirti** | `/api/bildirimler`'e rol kapısı koyarken *"ÜRÜN ETKİSİ SIFIR: hiçbir arayüz bileşeni bu ucu çağırmıyor"* yazdım — hem commit mesajına hem **kodun içine yorum olarak**. Yanlıştı. |
+| **Kök neden** | Arama `frontend/src` ile sınırlıydı. Çağıran bileşen o ağacın **dışında**: `frontend/components/BildirimMerkezi.tsx:28` → `fetch('/api/bildirimler')`, ve `src/app/dashboard/page.tsx:1079`'da render ediliyor. Bu depoda `components/` dizini `src/`'nin kardeşi, çocuğu değil. |
+| **Nasıl yakalandı** | Tamamen tesadüfen: komşu bir oturum grafik işine başladığını bildirirken alan olarak `frontend/components/` dedi ve orada `BildirimMerkezi.tsx` adını gördüm. Yani **kendi denetimim yakalamadı**. |
+| **Gerçek etki** | `role='user'` bir hesapta widget veri yerine *"Bu beslemeye erisim yetkiniz yok"* gösterir. Bileşen hatayı zarifçe ele aldığı için ekran çökmez. Bugünkü iki hesap admin/partner olduğundan fiilî bozulma yok. |
+| **Karar değişti mi** | **Hayır.** Kapı hâlâ doğru: içerik sistem işletim kaydı (tmux pencere adları, süreç kimlikleri) ve müşteriye gitmemeli. Değişen şey kararın kendisi değil, **ürün maliyetinin doğru raporlanması**. |
+| **Tur** | 6 (aynı sınıf: dar kapsamlı arama → yanlış olumsuz) |
+| **Ders** | Hata #5'te kök nedeni (`grep`'in `.gitignore`'a uyması) bulmuştum ve bu onu **çözmüyor** — buradaki sebep farklı: aracın kendisi değil, **benim verdiğim kapsam** dardı. Yani yanlış olumsuzun iki ayrı kaynağı var ve ikisini de kapatmak gerekiyor: (a) araç sessizce atlıyor olabilir, (b) kapsam yanlış yerde olabilir. |
+| **Önlem** | "Bu ucu kimse çağırmıyor" gibi bir **ürün etkisi** iddiası, tek bir alt ağaçtan çıkarılamaz. Bir HTTP yolu için her zaman **depo kökünden** ve `command grep` ile ara; ayrıca iddiayı koda yorum olarak yazmadan önce, aynı aramayı **ikinci bir kök dizinle** tekrarla. Bir iddia koda girdiğinde artık yanlış olduğunda bile okuyanı ikna eder. |
+
+Bu hata kayda değer bir başka yönüyle daha önemli: **kodun içine yazılmıştı.**
+Commit mesajındaki bir yanlış geçmişte kalır; kod yorumundaki bir yanlış,
+onu sonra okuyan herkesi yanıltmaya devam eder. Bu yüzden yalnızca
+belgeler değil, `route.ts`'teki yorum da düzeltildi.
+
+---
+
+## Yöntem notu — bu altı hatanın ortak yanı
 
 İkisi de **yanlış olumsuz** üretti ve ikisi de "ölçtüm" kılığındaydı. Bir
 komut çalıştırmış olmak, doğru şeyi ölçtüğüm anlamına gelmiyor. Y9 "kanıtsız
