@@ -109,6 +109,16 @@ services:
       # switch bunu kullanir.
       KOYFIN_EVENT_OVERLAY_ENABLED: "0"
       KOYFIN_PREVIEW_TOKEN: ""
+      # grafik terminali feature flag (Y7) - "0" = kapali (VARSAYILAN).
+      # KOYFIN_EVENT_OVERLAY_ENABLED ile AYNI desen ve ayni gerekce: deger
+      # sunucu tarafinda her istekte okunur, `docker compose up -d --no-deps
+      # frontend` ile yeniden DERLEME olmadan acilir/kapanir.
+      #
+      # DEGISKEN HIC OLMASAYDI DA kapali olurdu (kod yalnizca "1" ile acar);
+      # buraya ACIKCA yaziliyor cunku bir kill-switch'in bulunabilir olmasi
+      # gerekir - kapatmak isteyen kisi hangi degiskeni arayacagini bilmeli.
+      GRAFIK_TERMINALI_ENABLED: "0"
+      GRAFIK_PREVIEW_TOKEN: ""
     volumes:
       # Gun sonu raporlari - SALT OKUNUR (:ro). Dashboard bu dizini yalnizca
       # listeler ve .pdf indirir; hicbir kosulda yazamaz.
