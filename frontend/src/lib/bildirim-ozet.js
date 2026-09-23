@@ -20,6 +20,22 @@ export function duzeyRengi(duzey) {
 }
 
 /**
+ * HTTP durum kodu "bu kullanıcı bu beslemeyi göremez" mi diyor?
+ *
+ * NEDEN AYRI FONKSIYON (22.09.2026)
+ * ==================================
+ * "Yetkisiz -> bileşen tamamen gizlenir" ile "servis çöktü -> bileşen bunu
+ * AÇIKÇA söyler" (yukarıdaki DEĞİŞMEZ KURAL) birbirine karıştırılırsa,
+ * yetkisiz bir kullanıcıya "Bildirim servisi yanıt vermedi" gibi gerçek
+ * dışı bir arıza mesajı gösterilir ya da tam tersi, gerçek bir arıza
+ * sessizce yutulur. Yalnızca 403 "yetkisiz" sayılır; 500/502/504 gibi
+ * arıza kodları buraya YAKALANMAMALI ki DEĞİŞMEZ KURAL bozulmasın.
+ */
+export function erisimYetkisizMi(httpDurumu) {
+  return httpDurumu === 403
+}
+
+/**
  * Ust satirda gosterilecek durum.
  * Doner: { metin, renk, vurgulu }
  */

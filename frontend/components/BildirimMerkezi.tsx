@@ -10,9 +10,16 @@
  * "Alarm yok" yazisi YALNIZCA tum kaynaklar okunabildiginde cikar. Bir kaynak
  * okunamadiysa liste bos olsa bile bunu ACIKCA soyler. Karar mantigi
  * src/lib/bildirim-ozet.js icinde saf ve TESTLIDIR (9 test).
+ *
+ * YETKISIZ ROL: bu kural ARIZA icindir, YETKISIZLIK icin degildir (22.09.2026).
+ * /api/bildirimler 403 donerse (role='user') bu iki durum birbirine
+ * KARISTIRILMAZ: bilesen "alarm yok" ya da "bakamadim" demez, TAMAMEN
+ * GIZLENIR (null doner). Ayrim erisimYetkisizMi() ile yapilir - yalnizca
+ * 403'u yakalar, 500/502/504 gibi gercek arizalari DEGIL (bkz. o
+ * fonksiyonun testleri: bir servis cokusu "yetkisiz" ile karismamali).
  */
 import { useEffect, useState } from 'react'
-import { durumOzeti, rozetSayisi, duzeyRengi, kaynakEtiketi, bayatlikMetni }
+import { durumOzeti, rozetSayisi, duzeyRengi, kaynakEtiketi, bayatlikMetni, erisimYetkisizMi }
   from '@/lib/bildirim-ozet.js'
 
 const RENK = { yuzey: '#1e293b', cizgi: '#334155', vurgu: '#D4AF37',
@@ -22,15 +29,27 @@ export default function BildirimMerkezi() {
   const [veri, setVeri] = useState<any>(null)
   const [hata, setHata] = useState('')
   const [acik, setAcik] = useState(false)
+  const [gizli, setGizli] = useState(false)
 
   useEffect(() => {
     let iptal = false
     fetch('/api/bildirimler')
-      .then((r) => r.json())
-      .then((d) => { if (!iptal) { d?.hata ? setHata(d.hata) : setVeri(d) } })
+      .then(async (r) => {
+        // Yetkisiz (403): bilesen ariza mesaji GOSTERMEZ, tamamen gizlenir.
+        // Once burada kontrol edilir ki gorde parse edilip bos/hatali
+        // sanilmasin - HTTP durumu tek dogruluk kaynagidir.
+        if (erisimYetkisizMi(r.status)) { if (!iptal) setGizli(true); return }
+        const d = await r.json()
+        if (!iptal) { d?.hata ? setHata(d.hata) : setVeri(d) }
+      })
       .catch((e) => { if (!iptal) setHata('Bildirim servisine ulasilamiyor: ' + e.message) })
     return () => { iptal = true }
   }, [])
+
+  // Yetkisiz roldeyse bilesen hic render edilmez (Hook'lardan SONRA -
+  // React kurali: erken donus, hook sirasini bozmamak icin her zaman
+  // ayni sayida Hook cagrildiktan sonra gelmelidir).
+  if (gizli) return null
 
   // Hata durumunda da SESSIZ KALINMAZ: durumOzeti(null) uyarici metin uretir.
   const ozet = hata ? null : veri?.ozet

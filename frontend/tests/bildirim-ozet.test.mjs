@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { durumOzeti, rozetSayisi, duzeyRengi, kaynakEtiketi }
+import { durumOzeti, rozetSayisi, duzeyRengi, kaynakEtiketi, erisimYetkisizMi }
   from '../src/lib/bildirim-ozet.js'
 
 const ozet = (toplam, okunamayan, kritik = 0, alarm = 0) => ({
@@ -92,4 +92,26 @@ test('bugunku kayit "bugun" der', () => {
 
 test('bildirim yoksa cokmez', () => {
   assert.equal(bayatlikMetni(null), null)
+})
+
+// ----------------------------------------------------------------- erisimYetkisizMi
+
+test('403 -> yetkisiz sayilir (bileseni gizlemek icin)', () => {
+  assert.equal(erisimYetkisizMi(403), true)
+})
+
+test('200 -> yetkisiz DEGIL', () => {
+  assert.equal(erisimYetkisizMi(200), false)
+})
+
+test('EN KRITIK: ariza kodlari (500/502/504) yetkisiz SAYILMAZ', () => {
+  // Aksi halde bir servis cokusu "yetkisiz" ile karisir ve DEGISMEZ KURAL
+  // (arizanin ACIKCA gosterilmesi) sessizce atlanmis olur.
+  for (const kod of [500, 502, 504]) {
+    assert.equal(erisimYetkisizMi(kod), false, `${kod} yetkisiz sayilmamali`)
+  }
+})
+
+test('400 -> yetkisiz DEGIL (istek hatasi, yetki hatasi degil)', () => {
+  assert.equal(erisimYetkisizMi(400), false)
 })
