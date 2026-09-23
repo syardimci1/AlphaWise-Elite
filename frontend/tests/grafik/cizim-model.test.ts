@@ -407,3 +407,23 @@ test('TERS KONTROL: sıkılaştırma tamamen geçerli bir çizimi reddetmiyor', 
   assert.equal(gecerliCizim(TREND), true)
   assert.equal(gecerliCizim(YATAY), true)
 })
+
+test('B2 REGRESYON: boş metinli "metin" çizimi şemadan GEÇMEZ (görünmez hayalet)', () => {
+  // Bulgu: boş dize şemadan geçiyordu. Sonuç bir hayalet nesneydi —
+  // `cizimGorunumu` boş metinde null döndüğü için ÇİZİLMİYOR, ama
+  // `cizimUzakligi` metni hiç sormadığı için hit-test onu BULUYORDU.
+  // Yani kullanıcı görmediği bir şeyi seçebiliyordu.
+  const metinCizimi = (m: unknown) =>
+    ham({ tip: 'metin', noktalar: [{ t_utc: 1000, fiyat: 100 }], metin: m })
+  assert.equal(gecerliCizim(metinCizimi('')), false, 'boş dize')
+  assert.equal(gecerliCizim(metinCizimi('   ')), false, 'yalnızca boşluk')
+  assert.equal(gecerliCizim(metinCizimi('\t\n')), false, 'yalnızca sekme/satırsonu')
+  assert.equal(gecerliCizim(metinCizimi('not')), true, 'gerçek metin hâlâ geçer')
+  assert.equal(gecerliCizim(metinCizimi(' not ')), true, 'kenar boşluklu metin geçer')
+})
+
+test('B2 REGRESYON: reducer boş metinli çizimi EKLEMEZ', () => {
+  const baslangic = bosDurum()
+  const bos = ham({ tip: 'metin', noktalar: [{ t_utc: 1000, fiyat: 100 }], metin: '' })
+  assert.deepEqual(reducer(baslangic, { tip: 'EKLE', cizim: bos }).cizimler, [])
+})

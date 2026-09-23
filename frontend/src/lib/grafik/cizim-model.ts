@@ -124,7 +124,16 @@ export function gecerliCizim(cizim: Cizim): boolean {
   // `metin` opsiyoneldir; VARSA dize olmalı. 'metin' tipi için ayrıca zorunlu:
   // metinsiz bir metin çizimi ekranda görünmez bir hayalettir.
   if (cizim.metin !== undefined && typeof cizim.metin !== 'string') return false
-  if (cizim.tip === 'metin' && typeof cizim.metin !== 'string') return false
+  // B2 (23.09.2026, bağımsız denetim bulgusu): burada yalnızca `typeof ===
+  // 'string'` aranıyordu ve BOŞ DİZE geçiyordu. Sonuç bir "hayalet": çizim
+  // ekranda GÖRÜNMÜYOR (cizimGorunumu boş metinde null döner) ama hit-test
+  // onu buluyor, yani tıklanabilir/seçilebilir görünmez bir nesne oluşuyordu.
+  // Arayüz bunu `girilen.trim() === ''` ile zaten engelliyordu, ama kapı
+  // YANLIŞ KATMANDAYDI: localStorage'dan gelen ya da başka bir çağıranın
+  // ürettiği kayıt bu kapıyı hiç görmüyordu.
+  if (cizim.tip === 'metin' && (typeof cizim.metin !== 'string' || cizim.metin.trim() === '')) {
+    return false
+  }
   if (!Number.isFinite(cizim.olusturma_utc)) return false
   return true
 }

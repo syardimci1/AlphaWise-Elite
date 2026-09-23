@@ -7,6 +7,7 @@ import KarsilastirmaTablosu from '../../../components/KarsilastirmaTablosu'
 import PortfoyGrafigi from '../../../components/PortfoyGrafigi'
 import PriceChart from '../../../components/PriceChart'
 import EventOverlayLayer from '../../../components/EventOverlayLayer'
+import GrafikTerminali from '../../../components/GrafikTerminali'
 import { useRouter } from 'next/navigation'
 import { BolgeKarti, DurumRozeti, SinyalKutusu, Satir, UstBar, AramaFormu }
   from '../../../components/DashboardBilesenleri'
@@ -410,6 +411,13 @@ function PiyasaSinyalleri({ ticker }: { ticker: string }) {
           )}
         </div>
       )}
+
+      {/* ---------- GRAFIK TERMINALI (GRAFIK_TERMINALI_ENABLED) ----------
+          Bayrak KAPALIYKEN bilesen null doner: hicbir sey render edilmez,
+          hicbir istek atilmaz. Yukaridaki PriceChart/EventOverlayLayer
+          blogu DEGISMEDI - terminal onun yerine gecmez, yanina eklenir.
+          Kullanici kimligini bilesen kendisi /api/config/kimlik'ten ceker. */}
+      {t && <GrafikTerminali symbol={t} />}
 
       <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600,
         letterSpacing: '0.05em', textTransform: 'uppercase', margin: '16px 0 4px' }}>
