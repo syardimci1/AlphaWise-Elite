@@ -1,5 +1,6 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { istekKimligi, servisProxy, tickerDogrula, gecersizTicker } from '@/lib/servis-proxy'
+import { limitDogrula, limitSorguDizesi } from '@/lib/grafik/veri-penceresi'
 
 // market-data-service icin sunucu-tarafi proxy — DIGER 4 route'la (congress/
 // insider/13f/finra) AYNI kalip.
@@ -22,9 +23,18 @@ export async function GET(
   const t = tickerDogrula(ticker)
   if (!t) return gecersizTicker()
 
+  // `limit` ILETIMI (23.09.2026): daha once iletilmedigi icin grafik her zaman
+  // yukari akisin varsayilani olan ~60 barla sinirliydi; 13F/kongre olaylari
+  // bu pencerenin disina dustugunde marker'lar SESSIZCE kayboluyordu.
+  // Dogrulama mantigi @/lib/grafik/veri-penceresi icinde saf tutuldu.
+  const pencere = limitDogrula(req.nextUrl.searchParams.get('limit'))
+  if (pencere.durum === 'gecersiz') {
+    return NextResponse.json({ hata: `Gecersiz limit: ${pencere.sebep}` }, { status: 400 })
+  }
+
   return servisProxy({
     taban: process.env.MARKET_DATA_URL || 'http://alphawise-market-data:8000',
-    yol: `/price/${encodeURIComponent(t)}`,
+    yol: `/price/${encodeURIComponent(t)}${limitSorguDizesi(pencere)}`,
     zamanAsimiMs: 30_000,
     servisAdi: 'Market Data',
     kimlik: istekKimligi(req),
