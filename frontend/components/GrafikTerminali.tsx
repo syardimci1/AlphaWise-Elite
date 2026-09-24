@@ -37,6 +37,7 @@ import { GostergeKatmani } from '@/lib/grafik/gosterge-katmani'
 import { GOSTERGE_TANIMLARI, tumGostergeKimlikleri } from '@/lib/grafik/gosterge-tanim'
 import type { Depo } from '@/lib/grafik/cizim-kalicilik'
 import { kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
+import { gostergeAnahtari, gostergeleriKaydet, gostergeleriYukle } from '@/lib/grafik/gosterge-kalicilik'
 import type { Bar } from '@/lib/grafik/zaman-dilimi'
 import { hamBarlariCevir, resample } from '@/lib/grafik/zaman-dilimi'
 import type { CizimKimligi, TerminalDurum, TerminalEylem } from '@/lib/grafik/terminal-durum'
@@ -53,6 +54,7 @@ import {
   terminalReducer,
   tiklamaSonucu,
   veriNotu,
+  yuklemeNotu,
 } from '@/lib/grafik/terminal-durum'
 
 type Props = {
@@ -147,6 +149,13 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
   const [grafikHazir, setGrafikHazir] = useState(false)
   const [yuklenenSembol, setYuklenenSembol] = useState<string | null>(null)
   const [depoNotu, setDepoNotu] = useState('')
+  /**
+   * Gösterge seçiminin YÜKLENDİĞİ anahtar (ADR-5). Kaydetme yalnızca bu,
+   * o anki kullanıcı+sembolün anahtarına eşitken yapılır: aksi halde önceki
+   * sembolün/kullanıcının seçimi yeni ad alanına yazılırdı.
+   */
+  const [yuklenenGostergeAnahtari, setYuklenenGostergeAnahtari] = useState<string | null>(null)
+  const [gostergeKayitHatasi, setGostergeKayitHatasi] = useState('')
 
   // NEDEN useReducer DEĞİL useState: tıklama akışında durumu üreten
   // `tiklamaSonucu` ZATEN tam bir `TerminalDurum` döndürür. useReducer ile
@@ -366,9 +375,14 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     }
     const sonuc = yukle(depo, etkinKimlik, symbol)
     cizimGonder({ tip: 'YUKLE', cizimler: sonuc.cizimler })
-    setDepoNotu(sonuc.uyari ?? '')
+    // Göstergeler de aynı anda, aynı ad alanından (ADR-5). Kaydı olmayan
+    // sembol boş seçimle açılır: seçim sembole aittir, sembolden sembole taşınmaz.
+    const gostergeSonucu = gostergeleriYukle(depo, etkinKimlik, symbol)
+    terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: gostergeSonucu.gostergeler })
+    setYuklenenGostergeAnahtari(gostergeAnahtari(etkinKimlik, symbol))
+    setDepoNotu(yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari) ?? '')
     setYuklenenSembol(symbol)
-  }, [bayrak, symbol, etkinKimlik])
+  }, [bayrak, symbol, etkinKimlik, terminalGonder])
 
   // 6) Çizim değişince kaydet. YÜKLEME BİTMEDEN yazılmaz: aksi halde boş
   //    başlangıç durumu, kayıtlı çizimlerin üzerine yazılırdı.
@@ -386,6 +400,17 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     // kendi hatasını kendisi temizler.
     setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.kayitHatasi}: ${sonuc.hata ?? ''}`)
   }, [bayrak, yuklenenSembol, symbol, etkinKimlik, cizimDurum.cizimler])
+
+  // 6b) Gösterge seçimi değişince kaydet (ADR-5). Kapı ANAHTARIN TAMAMIDIR
+  //     (kullanıcı+sembol): yükleme bu ad alanı için bitmeden yazılmaz.
+  useEffect(() => {
+    if (bayrak !== 'acik' || etkinKimlik === null) return
+    if (yuklenenGostergeAnahtari !== gostergeAnahtari(etkinKimlik, symbol)) return
+    const { depo } = depoAl()
+    if (depo === null) return
+    const sonuc = gostergeleriKaydet(depo, etkinKimlik, symbol, terminal.gostergeler, Date.now())
+    setGostergeKayitHatasi(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.gostergeKayitHatasi}: ${sonuc.hata ?? ''}`)
+  }, [bayrak, etkinKimlik, symbol, yuklenenGostergeAnahtari, terminal.gostergeler])
 
   // 7) Çizim durumunu primitive'e ver (o da grafikten yeniden boyama ister).
   useEffect(() => {
@@ -642,9 +667,9 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
       </div>
 
       {/* Hata ve uyarılar GÖRÜNÜR: sessizce boş bir grafik bırakılmaz (Y13). */}
-      {hata !== '' && (
+      {(hata !== '' || gostergeKayitHatasi !== '') && (
         <div role="alert" style={{ color: RENK.hata, fontSize: 12, marginTop: 10 }}>
-          {hata}
+          {[hata, gostergeKayitHatasi].filter((m) => m !== '').join(' · ')}
         </div>
       )}
       {gosterilecekNot !== '' && (

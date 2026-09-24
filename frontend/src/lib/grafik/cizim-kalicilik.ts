@@ -53,13 +53,28 @@ function parcaKacisla(parca: string): string {
  * tip bilerek genisletildi - daralmadi, mevcut tum cagrilar gecerli kalir.
  */
 export function anahtarUret(kullaniciKimligi: string | null | undefined, sembol: string): string {
+  return adAlaniAnahtari(ANAHTAR_ONEKI, kullaniciKimligi, sembol)
+}
+
+/**
+ * Kullanici+sembol ad alanli anahtar: `<onek>:<kullanici>:<SEMBOL>`.
+ *
+ * NEDEN DISA ACIK: gosterge kaliciligi (ADR-5) ayni ad alanlama desenini
+ * kullanir. Kacislama ve normalizasyon kiraci izolasyonunun kendisidir;
+ * ikinci bir kopyasi sessizce ayrisip bir turu sizintiya acik birakirdi.
+ */
+export function adAlaniAnahtari(
+  onek: string,
+  kullaniciKimligi: string | null | undefined,
+  sembol: string,
+): string {
   const kimlik = typeof kullaniciKimligi === 'string' && kullaniciKimligi.trim() !== ''
     ? kullaniciKimligi.trim()
     : ANONIM_KIMLIK
   // toLocaleUpperCase DEGIL: Turkce yerelde 'i' -> 'İ' olur ve ayni sembol iki
   // farkli anahtar uretirdi. toUpperCase yerelden bagimsizdir (determinizm).
   const normalSembol = sembol.trim().toUpperCase()
-  return `${ANAHTAR_ONEKI}:${parcaKacisla(kimlik)}:${parcaKacisla(normalSembol)}`
+  return `${onek}:${parcaKacisla(kimlik)}:${parcaKacisla(normalSembol)}`
 }
 
 function hataMetni(hata: unknown): string {
