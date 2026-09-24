@@ -10,7 +10,7 @@ import {
   type Cizim,
   type Depo,
 } from '../../src/lib/grafik/cizim-kalicilik'
-import { gecerliCizim } from '../../src/lib/grafik/cizim-model'
+import { bosDurum, gecerliCizim, reducer as cizimReducer } from '../../src/lib/grafik/cizim-model'
 
 /** Bellek ici sahte depo - gercek localStorage semantigi (yoksa null doner). */
 class BellekDepo implements Depo {
@@ -225,4 +225,22 @@ test('KALICILIK (Y9): kotaHatasiMi tarayici bicimlerini tanir, digerlerini tanim
 test('KALICILIK (Y9): cizim kaydinda kota asimi kotaDoldu ile isaretlenir', () => {
   const sonuc = kaydet(new KotaDoluDepo(), 'ali', 'AAPL', ORNEK_CIZIMLER)
   assert.equal(sonuc.kotaDoldu, true)
+})
+
+test('KALICILIK (H-4): yinelenen kimlik - yukle ciktisi reducer YUKLE tarafindan HER ZAMAN kabul edilir', () => {
+  // Her oge tek basina gecerli ama iki cizim ayni id'yi tasiyor. Duzeltmeden
+  // once yukle ikisini de donduruyordu; reducer YUKLE listeyi butunuyle
+  // REDDEDIYOR, onceki sembolun cizimleri ekranda kalip yeni sembolun
+  // anahtarina yaziliyordu.
+  const depo = new BellekDepo()
+  const kopya = { ...ORNEK_CIZIMLER[1], id: ORNEK_CIZIMLER[0].id }
+  depo.setItem(anahtarUret('ali', 'AAPL'), JSON.stringify({ v: 1, cizimler: [...ORNEK_CIZIMLER, kopya] }))
+  const sonuc = yukle(depo, 'ali', 'AAPL')
+  assert.deepEqual(sonuc.cizimler, ORNEK_CIZIMLER) // ilk gelen kalir
+  assert.match(String(sonuc.uyari), /1 cizim yinelenen kimlik/)
+
+  const onceki = cizimReducer(bosDurum(), { tip: 'YUKLE', cizimler: [ORNEK_CIZIMLER[0]] })
+  const sonraki = cizimReducer(onceki, { tip: 'YUKLE', cizimler: sonuc.cizimler })
+  assert.notEqual(sonraki, onceki)
+  assert.deepEqual(sonraki.cizimler, ORNEK_CIZIMLER)
 })

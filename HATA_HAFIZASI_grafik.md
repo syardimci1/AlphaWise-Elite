@@ -25,3 +25,12 @@ Yalnızca ekleme yapılır; mevcut girdiler silinmez.
 - **Düzeltme:** `depodakiRef` — anahtar başına depoda olduğu bilinen içerik (JSON). Yüklenen içerik oraya yazılır; kaydetme efekti
   içerik aynıysa planlamaz. Yan kazanım: sıfırlama sonrası silinen anahtar yeniden yaratılmaz.
 - **Ders:** gecikme eklemek, "zararsız" gereksiz yazımları yarış durumuna çevirir; debounce'tan önce gereksiz yazımlar ayıklanmalı.
+
+## H-4 — yinelenen çizim kimliği kaydı bütünüyle yüklenemez kılıyordu (24.09.2026, S5 sırasında okuma)
+
+- **Belirti:** kayıtta aynı `id`'li iki geçerli çizim → `yukle()` ikisini de döndürür → `cizim-model` reducer'ı `YUKLE`'u
+  (yinelenen kimlik = geçersiz liste, `cizim-model.ts:154`) reddedip durumu DEĞİŞTİRMEZ → önceki sembolün çizimleri yeni
+  sembolde görünür ve yeni sembolün anahtarına yazılır.
+- **Kök neden:** iki doğrulama katmanı farklı sözleşmelerle çalışıyordu: `yukle` öğe bazlı, `YUKLE` liste bazlı (benzersizlik dahil).
+- **Düzeltme:** `cizimleriAyikla` yinelenen kimlikleri ayıklar (ilk gelen kalır), sayısı uyarıya yazılır. Test: "yukle çıktısı
+  reducer YUKLE tarafından HER ZAMAN kabul edilir".

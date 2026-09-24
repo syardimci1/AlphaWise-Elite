@@ -121,14 +121,24 @@ function cizimMi(deger: unknown): deger is Cizim {
 /** Dizideki gecerli cizimleri ayiklar; atlananlarin SAYISI uyariya yazilir (sessiz kayip yok). */
 function cizimleriAyikla(ham: unknown[], oncekiUyari?: string): YuklemeSonucu {
   const cizimler: Cizim[] = []
+  const kimlikler = new Set<string>()
   let atlanan = 0
+  let yinelenen = 0
   for (const oge of ham) {
-    if (cizimMi(oge)) cizimler.push(oge)
-    else atlanan += 1
+    if (!cizimMi(oge)) atlanan += 1
+    // H-4: reducer YUKLE yinelenen kimlikli listeyi BUTUNUYLE reddeder; burada
+    // ayiklanmazsa kayit hic yuklenmez ve onceki sembolun cizimleri ekranda
+    // kalip bu sembolun anahtarina yazilirdi. Ilk gelen kalir.
+    else if (kimlikler.has(oge.id)) yinelenen += 1
+    else {
+      kimlikler.add(oge.id)
+      cizimler.push(oge)
+    }
   }
   const uyarilar: string[] = []
   if (oncekiUyari !== undefined) uyarilar.push(oncekiUyari)
   if (atlanan > 0) uyarilar.push(`${atlanan} cizim semaya uymadigi icin atlandi`)
+  if (yinelenen > 0) uyarilar.push(`${yinelenen} cizim yinelenen kimlik tasidigi icin atlandi`)
   return uyarilar.length > 0 ? { cizimler, uyari: uyarilar.join('; ') } : { cizimler }
 }
 
