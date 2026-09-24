@@ -13,3 +13,15 @@ Yalnızca ekleme yapılır; mevcut girdiler silinmez.
   tek çağıran kimlik prop'u geçmediği için görünmüyordu.
 - **Düzeltme:** kapı `yuklenenCizimAnahtari === anahtarUret(etkinKimlik, symbol)` — ad alanının tamamı. Gösterge kaydı baştan aynı kapıyla yazıldı.
 - **Ders:** kalıcılık testinde son durum yetmez; yazım günlüğü (her `setItem`) denetlenmeli.
+
+## H-5 — debounce, yüklenen verinin "yankı" yazımını tehlikeli hale getirdi (24.09.2026, S5)
+
+- **Belirti:** debounce eklenince E11 (`1001` beklenirken `1` çizim) ve E7 (yer açıldıktan sonra kalıcı kota uyarısı) kırmızıya döndü.
+- **Kök neden:** kaydetme efekti yükleme sonrası da çalışıp **az önce okunan veriyi geri yazıyordu**. Senkron yazımda bu zararsızdı
+  (aynı an). Debounce ile yazım 300 ms gecikti: o arada başka bir yerden (başka sekme; düzenekte `/bos` sayfası) yazılan daha yeni
+  kayıt, eski veriyle **ezildi**; E7'de ise gecikmiş yankı, kota dolduktan sonra çalışıp gerçek olmayan bir "çizim yazılamadı" uyarısı bıraktı.
+- **5 Neden:** (1) yeni kayıt ezildi ← (2) gecikmiş yazım eski veriyi taşıdı ← (3) yüklenen veri kaydetme efektini tetikliyor ←
+  (4) efekt "değişti mi" değil "render oldu mu" sorusuna bakıyor ← (5) "depoda ne var" bilgisi hiçbir yerde tutulmuyordu.
+- **Düzeltme:** `depodakiRef` — anahtar başına depoda olduğu bilinen içerik (JSON). Yüklenen içerik oraya yazılır; kaydetme efekti
+  içerik aynıysa planlamaz. Yan kazanım: sıfırlama sonrası silinen anahtar yeniden yaratılmaz.
+- **Ders:** gecikme eklemek, "zararsız" gereksiz yazımları yarış durumuna çevirir; debounce'tan önce gereksiz yazımlar ayıklanmalı.

@@ -38,6 +38,7 @@ import { GOSTERGE_TANIMLARI, tumGostergeKimlikleri } from '@/lib/grafik/gosterge
 import type { Depo } from '@/lib/grafik/cizim-kalicilik'
 import { anahtarUret, kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
 import { gostergeAnahtari, gostergeleriKaydet, gostergeleriYukle } from '@/lib/grafik/gosterge-kalicilik'
+import { GecikmeliKayit } from '@/lib/grafik/gecikmeli-kayit'
 import type { Bar } from '@/lib/grafik/zaman-dilimi'
 import { hamBarlariCevir, resample } from '@/lib/grafik/zaman-dilimi'
 import type { CizimKimligi, TerminalDurum, TerminalEylem } from '@/lib/grafik/terminal-durum'
@@ -164,6 +165,14 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
    */
   const [yuklenenGostergeAnahtari, setYuklenenGostergeAnahtari] = useState<string | null>(null)
   const [gostergeKayitHatasi, setGostergeKayitHatasi] = useState('')
+  /** Anahtar başına debounce'lu yazıcı (C5). Bileşen ömrü boyunca tek örnek. */
+  const [kayitci] = useState(() => new GecikmeliKayit())
+  /**
+   * Anahtar başına depoda OLDUĞU bilinen içerik (JSON). Yüklenen veri geri
+   * yazılmaz: debounce ile bu "yankı" yazımı 300 ms gecikir ve o arada başka
+   * bir sekmenin yazdığı daha yeni kaydı eski veriyle ezerdi (E11'de ölçüldü).
+   */
+  const depodakiRef = useRef(new Map<string, string>())
 
   // NEDEN useReducer DEĞİL useState: tıklama akışında durumu üreten
   // `tiklamaSonucu` ZATEN tam bir `TerminalDurum` döndürür. useReducer ile
@@ -383,10 +392,12 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     }
     const sonuc = yukle(depo, etkinKimlik, symbol)
     cizimGonder({ tip: 'YUKLE', cizimler: sonuc.cizimler })
+    depodakiRef.current.set(anahtarUret(etkinKimlik, symbol), JSON.stringify(sonuc.cizimler))
     // Göstergeler de aynı anda, aynı ad alanından (ADR-5). Kaydı olmayan
     // sembol boş seçimle açılır: seçim sembole aittir, sembolden sembole taşınmaz.
     const gostergeSonucu = gostergeleriYukle(depo, etkinKimlik, symbol)
     terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: gostergeSonucu.gostergeler })
+    depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), JSON.stringify(gostergeSonucu.gostergeler))
     setYuklenenGostergeAnahtari(gostergeAnahtari(etkinKimlik, symbol))
     setDepoNotu(yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari) ?? '')
     setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
@@ -404,13 +415,23 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     if (yuklenenCizimAnahtari !== anahtarUret(etkinKimlik, symbol)) return
     const { depo } = depoAl()
     if (depo === null) return
-    const sonuc = kaydet(depo, etkinKimlik, symbol, cizimDurum.cizimler)
-    // B5 (23.09.2026, bağımsız denetim): hata YALNIZCA bir sonraki başarılı
-    // veri çekiminde temizleniyordu; kayıt/PNG hatası ekranda asılı kalıp
-    // sorun çözüldükten sonra da kullanıcıyı yanıltıyordu. Başarılı kayıt
-    // kendi hatasını kendisi temizler.
-    setHata(kayitHataMetni('cizim', sonuc))
-  }, [bayrak, yuklenenCizimAnahtari, symbol, etkinKimlik, cizimDurum.cizimler])
+    // Yazım debounce'lu (C5). Kimlik, sembol ve çizimler BU AN yakalanır:
+    // yazım sembol değiştikten sonra çalışsa da veri kendi anahtarına gider.
+    const kimlik = etkinKimlik
+    const sembol = symbol
+    const cizimler = cizimDurum.cizimler
+    const anahtar = anahtarUret(kimlik, sembol)
+    const icerik = JSON.stringify(cizimler)
+    if (depodakiRef.current.get(anahtar) === icerik) return
+    depodakiRef.current.set(anahtar, icerik)
+    kayitci.planla(anahtar, () => {
+      // B5 (23.09.2026, bağımsız denetim): hata YALNIZCA bir sonraki başarılı
+      // veri çekiminde temizleniyordu; kayıt/PNG hatası ekranda asılı kalıp
+      // sorun çözüldükten sonra da kullanıcıyı yanıltıyordu. Başarılı kayıt
+      // kendi hatasını kendisi temizler.
+      setHata(kayitHataMetni('cizim', kaydet(depo, kimlik, sembol, cizimler)))
+    })
+  }, [bayrak, yuklenenCizimAnahtari, symbol, etkinKimlik, cizimDurum.cizimler, kayitci])
 
   // 6b) Gösterge seçimi değişince kaydet (ADR-5). Kapı ANAHTARIN TAMAMIDIR
   //     (kullanıcı+sembol): yükleme bu ad alanı için bitmeden yazılmaz.
@@ -419,9 +440,36 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     if (yuklenenGostergeAnahtari !== gostergeAnahtari(etkinKimlik, symbol)) return
     const { depo } = depoAl()
     if (depo === null) return
-    const sonuc = gostergeleriKaydet(depo, etkinKimlik, symbol, terminal.gostergeler, Date.now())
-    setGostergeKayitHatasi(kayitHataMetni('gosterge', sonuc))
-  }, [bayrak, etkinKimlik, symbol, yuklenenGostergeAnahtari, terminal.gostergeler])
+    const kimlik = etkinKimlik
+    const sembol = symbol
+    const gostergeler = terminal.gostergeler
+    const anahtar = gostergeAnahtari(kimlik, sembol)
+    const icerik = JSON.stringify(gostergeler)
+    if (depodakiRef.current.get(anahtar) === icerik) return
+    depodakiRef.current.set(anahtar, icerik)
+    kayitci.planla(anahtar, () => {
+      const sonuc = gostergeleriKaydet(depo, kimlik, sembol, gostergeler, Date.now())
+      setGostergeKayitHatasi(kayitHataMetni('gosterge', sonuc))
+    })
+  }, [bayrak, etkinKimlik, symbol, yuklenenGostergeAnahtari, terminal.gostergeler, kayitci])
+
+  // 6c) Bekleyen yazımları boşalt: sekme kapanırken/gizlenirken ve bileşen
+  //     kaldırılırken. Debounce'un veri kaybı penceresini bu kapatır (C5).
+  //     `pagehide` mobil tarayıcılarda güvenilmez; `visibilitychange→hidden`
+  //     onların son güvenilir anıdır, ikisi birlikte dinlenir.
+  useEffect(() => {
+    const bosalt = (): void => kayitci.bosalt()
+    const gizlenince = (): void => {
+      if (document.visibilityState === 'hidden') kayitci.bosalt()
+    }
+    window.addEventListener('pagehide', bosalt)
+    document.addEventListener('visibilitychange', gizlenince)
+    return () => {
+      window.removeEventListener('pagehide', bosalt)
+      document.removeEventListener('visibilitychange', gizlenince)
+      kayitci.bosalt()
+    }
+  }, [kayitci])
 
   // 7) Çizim durumunu primitive'e ver (o da grafikten yeniden boyama ister).
   useEffect(() => {

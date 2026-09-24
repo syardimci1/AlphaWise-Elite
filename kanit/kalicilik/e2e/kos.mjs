@@ -265,6 +265,90 @@ senaryo('E8 localStorage kapalı (gizli mod benzetimi): terminal çalışır, no
   if (!(await cizimVar(s))) throw new Error('çizim yapılamadı')
 })
 
+/** Geçerli bir `Cizim` (cizim-model şeması) - büyük kayıt senaryoları için. */
+function ornekCizim(i) {
+  return {
+    v: 1, id: `yuk-${i}`, tip: 'trend',
+    noktalar: [{ t_utc: Date.UTC(2025, 1, 3) + i * 86_400_000, fiyat: 100 + i / 10 }, { t_utc: Date.UTC(2025, 2, 3) + i * 86_400_000, fiyat: 101 + i / 10 }],
+    stil: { renk: '#D4AF37', kalinlik: 2 }, olusturma_utc: 1758700000000 + i,
+  }
+}
+
+senaryo('E9 (Y10) hızlı art arda 20 gösterge değişimi (yarış): en fazla 2 yazım, son durum doğru', async (baglam) => {
+  const s = await baglam.newPage()
+  await ac(s)
+  await bekle(s)
+  const once = (await yazimlar(s)).length
+  for (let i = 0; i < 10; i += 1) {
+    await gostergeTikla(s, 'SMA 20')
+    await gostergeTikla(s, 'EMA 20')
+  }
+  await gostergeTikla(s, 'EMA 20') // net sonuç: yalnızca EMA 20 açık
+  await bekle(s)
+  const gostergeYazimlari = (await yazimlar(s)).slice(once).filter((y) => y.anahtar === GOSTERGE_A)
+  console.log(`       (21 tıklama → ${gostergeYazimlari.length} gösterge yazımı)`)
+  if (gostergeYazimlari.length > 2) throw new Error(`${gostergeYazimlari.length} yazım (debounce yok)`)
+  esit(JSON.parse((await depo(s))[GOSTERGE_A]).gostergeler, ['ema20'], 'son durum')
+  await s.reload()
+  await ac(s)
+  esit(await basiliListe(s), ['EMA 20'], 'yenileme sonrası')
+})
+
+senaryo('E10 (C5) debounce penceresi içinde yenileme/kapama: son değişiklik KAYBOLMAZ', async (baglam) => {
+  const s = await baglam.newPage()
+  await ac(s)
+  await bekle(s)
+  await gostergeTikla(s, 'Bollinger (20, 2)')
+  await s.reload() // BEKLEMEDEN: yazım 300 ms penceresinin içinde
+  await ac(s)
+  esit(await basiliListe(s), ['Bollinger (20, 2)'], 'pencere içi yenileme')
+  await gostergeTikla(s, 'RSI 14')
+  await s.close({ runBeforeUnload: true }) // sekme kapanışı
+  const s2 = await baglam.newPage()
+  await ac(s2)
+  esit(await basiliListe(s2), ['Bollinger (20, 2)', 'RSI 14'], 'pencere içi sekme kapanışı')
+})
+
+senaryo('E11 (Y14) 1000 kayıtlı çizim: yükleme + ekleme çalışır, sayfa hatası yok', async (baglam) => {
+  const s = await baglam.newPage()
+  await s.goto(`${KOK}/bos`)
+  await s.evaluate(([c, liste]) => localStorage.setItem(c, JSON.stringify({ v: 1, cizimler: liste })),
+    [CIZIM_A, Array.from({ length: 1000 }, (_, i) => ornekCizim(i))])
+  await ac(s)
+  await yatayCiz(s)
+  await bekle(s)
+  const kayit = (await depo(s))[CIZIM_A]
+  esit(JSON.parse(kayit).cizimler.length, 1001, 'çizim sayısı')
+  console.log(`       (1001 çizim = ${kayit.length} karakter)`)
+})
+
+senaryo('P1 (Y10) yazım maliyeti ölçümü: JSON.stringify + setItem, gerçek Chromium', async (baglam) => {
+  const s = await baglam.newPage()
+  await s.goto(`${KOK}/bos`)
+  const olcumler = await s.evaluate((liste) => {
+    const sonuc = []
+    const olc = (ad, veri) => {
+      const sureler = []
+      for (let i = 0; i < 200; i += 1) {
+        const t0 = performance.now()
+        localStorage.setItem('olcum', JSON.stringify(veri))
+        sureler.push(performance.now() - t0)
+      }
+      sureler.sort((x, y) => x - y)
+      sonuc.push({ ad, karakter: JSON.stringify(veri).length, p50: sureler[100], p95: sureler[189], azami: sureler[199] })
+    }
+    olc('gösterge (6 açık)', { v: 1, gostergeler: ['sma20', 'sma50', 'ema20', 'bollinger20', 'rsi14', 'macd'], guncelleme_utc: 1 })
+    for (const n of [10, 100, 1000, 5000]) olc(`${n} çizim`, { v: 1, cizimler: liste.slice(0, n) })
+    localStorage.removeItem('olcum')
+    return sonuc
+  }, Array.from({ length: 5000 }, (_, i) => ornekCizim(i)))
+  for (const o of olcumler) {
+    console.log(`       ${o.ad.padEnd(18)} ${String(o.karakter).padStart(8)} kr  p50 ${o.p50.toFixed(3)} ms  p95 ${o.p95.toFixed(3)} ms  azami ${o.azami.toFixed(3)} ms`)
+  }
+  const bin = olcumler.find((o) => o.ad === '1000 çizim')
+  if (bin.p95 > 50) throw new Error(`1000 çizimde p95 ${bin.p95} ms > 50 ms`)
+})
+
 // ------------------------------------------------------------------ koş
 const filtre = process.argv[2]
 let kalan = 0
