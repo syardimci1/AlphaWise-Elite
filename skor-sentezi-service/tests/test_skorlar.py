@@ -494,3 +494,22 @@ def test_dcf_buyume_kirpma_sinirlari_asilmaz():
     for k in ("dusuk", "yuksek"):
         g = o.ayrinti["duyarlilik"][k]["buyume"]
         assert -0.05 <= g <= 0.15, f"{k} buyume kirpma disinda: {g}"
+
+
+def test_dcf_surekli_buyume_ve_tahmin_ufku_bildirilir():
+    """Terminal deger DCF sonucunun agirlikli bolumunu tasir ve tamamen
+    'g' ile tahmin ufkuna dayanir. Ikisi de GIZLI BIR KOD VARSAYILANI degil,
+    yayimlanmis bir girdi olmalidir."""
+    o = dcf_icsel_fiyat_orani(dcf_sirketi(), risksiz_faiz=0.04)
+    assert o.durum == OLCULDU
+    assert o.ayrinti["surekli_buyume"] == 0.025
+    assert o.ayrinti["tahmin_yili"] == 5
+
+
+def test_dcf_varsayim_metni_terminal_buyumeyi_anar():
+    """API alanlarini okumayip yalnizca varsayim metnini goren yuzeyler de
+    terminal buyume varsayimini gormelidir."""
+    o = dcf_icsel_fiyat_orani(dcf_sirketi(), risksiz_faiz=0.04)
+    metin = o.ayrinti["varsayim"]
+    assert "surekli buyume" in metin
+    assert "0.025" in metin

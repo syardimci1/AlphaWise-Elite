@@ -402,9 +402,12 @@ def dcf_icsel_fiyat_orani(sirket: Sirket, risksiz_faiz: Optional[float] = None,
                    klasik_guvenlik_payi=guvenlik_payi,
                    iskonto_orani=r, buyume=buyume, net_borc=net_borc,
                    duyarlilik=band,
+                   surekli_buyume=surekli_buyume, tahmin_yili=tahmin_yili,
                    varsayim="iskonto = risksiz faiz + beta x %5 hisse risk primi; "
                             "buyume gecmis serbest nakit akisindan turetilip "
-                            "[-%5, +%15] araligina kirpildi")
+                            "[-%5, +%15] araligina kirpildi; "
+                            f"terminal deger {tahmin_yili} yillik acik tahminden "
+                            f"sonra surekli buyume ({surekli_buyume}) ile hesaplandi")
 
 
 # ------------------------------------------------------- TEMETTU DAYANIKLILIGI
