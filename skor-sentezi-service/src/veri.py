@@ -58,6 +58,35 @@ def _kesintisiz_temettu_yili(temettu_serisi) -> Optional[int]:
     return sayac
 
 
+def _temettu_pencereleri(temettu_serisi) -> tuple:
+    """Ardisik iki 12 aylik pencerenin temettu toplami: (son, onceki).
+
+    CAPA BUGUN DEGIL SON ODEME TARIHIDIR. Bugune capalamak ayni seriyi
+    kosuldugu gune gore farkli okurdu; son odemeye capalamak hem
+    deterministik hem de kismi takvim yilindan etkilenmez.
+
+    Onceki pencerede hic odeme yoksa 0 DEGIL None doner: 0 bir taban olarak
+    kullanilsa buyume sonsuz cikardi — bu olculmus degil, uydurulmus olurdu.
+    """
+    if temettu_serisi is None or len(temettu_serisi) == 0:
+        return None, None
+    kayitlar = []
+    for tarih, deger in temettu_serisi.items():
+        try:
+            f = float(deger)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(f) or f <= 0:
+            continue
+        kayitlar.append((tarih, f))
+    if not kayitlar:
+        return None, None
+    capa = max(t for t, _ in kayitlar)
+    son = sum(f for t, f in kayitlar if (capa - t).days < 365)
+    onceki = sum(f for t, f in kayitlar if 365 <= (capa - t).days < 730)
+    return (son or None), (onceki or None)
+
+
 def risksiz_faiz_getir(yf) -> Optional[float]:
     """^TNX yuzde cinsindendir (4.2 = %4.2) -> ondaliga cevrilir."""
     try:
@@ -113,4 +142,9 @@ def sirket_getir(yf, ticker: str, azami_donem: int = 4) -> Sirket:
         "sirket_adi": bilgi.get("longName") or bilgi.get("shortName"),
         "temettu_kesintisiz_yil": _kesintisiz_temettu_yili(temettu),
     }
+    # Verim ve temettu buyumesi icin (K2-08): seri ZATEN cekildi, yeni ag
+    # cagrisi YOK. Eskiden yalnizca kesintisiz yil skaleri saklanip seri
+    # atiliyordu; iki pencere toplami da ayni seriden gelir.
+    piyasa["temettu_son12ay"], piyasa["temettu_onceki12ay"] = \
+        _temettu_pencereleri(temettu)
     return Sirket(ticker=ticker.upper(), donemler=donemler, piyasa=piyasa)

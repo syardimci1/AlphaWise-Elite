@@ -29,7 +29,8 @@ olculmus bir sifirdir.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
-from .olcum import Olcum, olculdu, olculemedi, uygulanamaz
+from .olcum import (Olcum, olculdu, olculemedi, uygulanamaz,
+                    OLCULDU, OLCULEMEDI)
 
 
 @dataclass
@@ -407,6 +408,51 @@ def dcf_icsel_fiyat_orani(sirket: Sirket, risksiz_faiz: Optional[float] = None,
 
 
 # ------------------------------------------------------- TEMETTU DAYANIKLILIGI
+def _rapor_boyutu(deger, gerekce: str) -> dict:
+    """Kendi durumunu tasiyan rapor alani. Deger uretilemediyse alan yoklukla
+    DEGIL gerekceli bir 'olculemedi' ile doldurulur."""
+    if deger is None:
+        return {"deger": None, "durum": OLCULEMEDI, "gerekce": gerekce,
+                "puana_girer": False}
+    return {"deger": float(deger), "durum": OLCULDU, "gerekce": "",
+            "puana_girer": False}
+
+
+def _temettu_rapor_boyutlari(sirket: Sirket) -> dict:
+    """Verim ve temettu buyumesi — RAPOR alanlaridir, PUANA GIRMEZLER.
+
+    Neden puana girmiyorlar: eksenin agirliklari (0.40/0.40/0.20) odeme
+    orani, FCF kapsami ve sure icin kurulmustur. Bu ikisini puana katmak
+    agirliklari yeniden bolmek, yani kalibre edilmemis bir agirlik
+    UYDURMAK olurdu. Rakip (Seeking Alpha) bu dort boyutu ayri ayri
+    notluyor ama agirligini da yontemini de YAYIMLAMIYOR; onu taklit edip
+    sayi uydurmaktansa boyutu olcup puandan ayri tutuyoruz.
+
+    Her iki deger de veri.py'nin ZATEN cektigi temettu serisinden gelir;
+    yeni ag cagrisi veya yeni veri kaynagi YOKTUR.
+    """
+    fiyat = sirket.piyasa.get("fiyat")
+    son12 = sirket.piyasa.get("temettu_son12ay")
+    onceki12 = sirket.piyasa.get("temettu_onceki12ay")
+
+    if son12 is None:
+        verim = _rapor_boyutu(
+            None, "Temettu odeme serisi yok; hisse basina temettu bilinmiyor")
+    elif not fiyat or fiyat <= 0:
+        verim = _rapor_boyutu(None, "Guncel fiyat yok; verim hesaplanamaz")
+    else:
+        verim = _rapor_boyutu(son12 / fiyat, "")
+
+    if son12 is None or onceki12 is None:
+        buyume = _rapor_boyutu(
+            None, "Ardisik iki 12 aylik temettu penceresi yok; "
+                  "buyume olculemez (sabit kalmis SAYILMAZ)")
+    else:
+        buyume = _rapor_boyutu(son12 / onceki12 - 1.0, "")
+
+    return {"verim": verim, "temettu_buyumesi": buyume}
+
+
 def temettu_dayanikligi(sirket: Sirket) -> Olcum:
     """Bu eksen, digerlerinin aksine YAYIMLANMIS bir olcut degildir; kendi
     bilesimimizdir ve boyle etiketlenir. Uc bilesenin agirlikli ortalamasi:
@@ -470,4 +516,5 @@ def temettu_dayanikligi(sirket: Sirket) -> Olcum:
     return olculdu(puan, odeme_orani=odeme_orani, fcf_orani=fcf_orani,
                    kesintisiz_yil=yil, bilesen_odeme=p_odeme,
                    bilesen_fcf=p_fcf, bilesen_sure=p_sure,
+                   **_temettu_rapor_boyutlari(sirket),
                    not_="Yayimlanmis bir olcut degildir; AlphaWise bilesimidir.")

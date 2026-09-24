@@ -52,7 +52,8 @@ MERCEKLER = [
             "kazanc_kalitesi": "Temettüyü besleyen kârın muhasebe kalitesi.",
         },
         "soyleyemedikleri": [
-            "Temettü VERİMİ (yüzde) bu eksende ölçülmez; ölçülen dayanıklılıktır.",
+            "Temettü VERİMİ ve temettü BÜYÜMESİ ayrıntıda raporlanır ama bu "
+            "eksenin PUANINA girmez; puanlanan dayanıklılıktır.",
             "Temettü ödemeyen bir şirket 'kötü' değildir; o eksen UYGULANAMAZ döner.",
             "Gelecekteki temettü kararları hakkında hiçbir şey söylemez.",
         ],
