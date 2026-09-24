@@ -6,7 +6,7 @@ Karar kodu URETMEZ: yalnizca bes ekseni ve gerekcelerini yayinlar; karar
 uretimi MAA'nin (korunmus) isidir.
 """
 from __future__ import annotations
-import os
+import os, time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
@@ -41,9 +41,10 @@ def _skor_hesapla(ticker: str, onbellek_kullan: bool = True):
     """Tek sirketin bes eksenini uretir. Sonuc onbellege yazilir; onbellek
     ayni zamanda sektor indeksini besler (bkz. onbellek.py)."""
     if onbellek_kullan:
-        hazir = onbellek.oku(ticker)
-        if hazir is not None:
-            return {**hazir, "onbellekten": True}
+        kayit = onbellek.oku_kayit(ticker)
+        if kayit is not None:
+            return onbellek.isabet_yaniti(kayit, time.time(),
+                                          onbellek.YASAM_SURESI_SN)
     try:
         import yfinance as yf
     except ImportError:
@@ -63,8 +64,8 @@ def _skor_hesapla(ticker: str, onbellek_kullan: bool = True):
     sonuc["donem_sayisi"] = len(sirket.donemler)
     sonuc["risksiz_faiz"] = rf
     sonuc["veri_kaynagi"] = "yfinance (ucretsiz)"
-    onbellek.yaz(ticker, sonuc)
-    return {**sonuc, "onbellekten": False}
+    hesaplama_ts = onbellek.yaz(ticker, sonuc)
+    return onbellek.taze_yanit(sonuc, hesaplama_ts, onbellek.YASAM_SURESI_SN)
 
 
 @app.get("/eksenler")

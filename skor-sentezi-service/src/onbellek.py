@@ -25,11 +25,19 @@ soylenir; uydurma rakip listesi URETILMEZ.
 """
 from __future__ import annotations
 import json, os, time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 ONBELLEK_DIZIN = Path(os.environ.get("ONBELLEK_DIZIN", "/app/onbellek"))
 YASAM_SURESI_SN = int(os.environ.get("ONBELLEK_YASAM_SN", str(24 * 3600)))
+
+# TAZELIK GIZLENMEZ: onbellek yasi ile KAYNAK verinin kendi gecikmesi ayri
+# seylerdir. Mali tablolar ucer ayda bir yayimlandigi icin taze bir onbellek
+# bile aylar oncesinin bilancosuna dayanir; yalnizca onbellek yasini soylemek,
+# kullaniciya olcumden daha yeni bir sey gosterildigi izlenimi verirdi.
+KAYNAK_GECIKMESI = ("kaynak mali tablolar ceyreklik (XBRL) yayimlanir, en taze "
+                    "skor bile 3 aya kadar eski bir bilancoya dayanabilir")
 
 
 def _yol(ticker: str) -> Path:
@@ -48,19 +56,32 @@ def _yol(ticker: str) -> Path:
     return ONBELLEK_DIZIN / f"{guvenli}.json"
 
 
-def yaz(ticker: str, veri: dict) -> None:
+def yaz(ticker: str, veri: dict) -> float:
+    """Sonucu onbellege yazar ve HESAPLAMA ZAMANINI dondurur.
+
+    Zaman geri dondurulur cunku yanit, dosyaya yazilanla AYNI ani bildirmeli;
+    cagiranin ikinci bir time.time() almasi iki alani birbirinden ayirirdi.
+    Yazma basarisiz olsa da zaman gercektir: skor yine de o an hesaplandi.
+    """
+    zaman = time.time()
     try:
         ONBELLEK_DIZIN.mkdir(parents=True, exist_ok=True)
         gecici = _yol(ticker).with_suffix(".json.tmp")
-        gecici.write_text(json.dumps({"zaman": time.time(), "veri": veri},
+        gecici.write_text(json.dumps({"zaman": zaman, "veri": veri},
                                      ensure_ascii=False), encoding="utf-8")
         # Atomik yer degistirme: yarim yazilmis bir dosya asla okunmaz.
         gecici.replace(_yol(ticker))
     except OSError:
         pass  # onbellek yazilamamasi ISLEVI DUSURMEZ, yalnizca yavaslatir
+    return zaman
 
 
-def oku(ticker: str, yasam_sn: Optional[int] = None) -> Optional[dict]:
+def oku_kayit(ticker: str, yasam_sn: Optional[int] = None) -> Optional[dict]:
+    """Suresi dolmamis HAM kayit: {"zaman": ..., "veri": ...}.
+
+    oku() yalnizca veriyi dondurdugu icin hesaplama zamani yolda kayboluyordu;
+    tazelik bildirebilmek icin zamanin cagirana ulasmasi gerekiyor.
+    """
     yasam = YASAM_SURESI_SN if yasam_sn is None else yasam_sn
     p = _yol(ticker)
     if not p.exists():
@@ -73,7 +94,51 @@ def oku(ticker: str, yasam_sn: Optional[int] = None) -> Optional[dict]:
         return None
     if time.time() - float(kayit["zaman"]) > yasam:
         return None
-    return kayit.get("veri")
+    return kayit
+
+
+def oku(ticker: str, yasam_sn: Optional[int] = None) -> Optional[dict]:
+    kayit = oku_kayit(ticker, yasam_sn)
+    return None if kayit is None else kayit.get("veri")
+
+
+def zaman_metni(ts: float) -> str:
+    """Epoch saniyesi -> ISO 8601 (UTC). Yerel saat YAZILMAZ: yaniti okuyan
+    kisinin hangi saat diliminde oldugu bilinmiyor."""
+    return datetime.fromtimestamp(float(ts), timezone.utc).isoformat(
+        timespec="seconds")
+
+
+def tazelik_metni(onbellek_yasi_sn: int, yasam_sn: int) -> str:
+    """Kullaniciya gosterilecek DURUST tazelik aciklamasi.
+
+    Onbellek yasi ve kaynak gecikmesi AYRI AYRI soylenir (bkz.
+    KAYNAK_GECIKMESI); metin yasa gore degisir, sabit bir ifade donmez.
+    """
+    if onbellek_yasi_sn <= 0:
+        return f"Bu skor az once hesaplandi (taze); {KAYNAK_GECIKMESI}."
+    azami_saat = (yasam_sn + 3599) // 3600
+    return (f"Bu skor {onbellek_yasi_sn} sn ({onbellek_yasi_sn / 3600:.1f} saat) "
+            f"once hesaplandi; onbellek en fazla ~{azami_saat} saat tutar. "
+            f"Ayrica {KAYNAK_GECIKMESI}.")
+
+
+def isabet_yaniti(kayit: dict, simdi_ts: float, yasam_sn: int) -> dict:
+    """Onbellek isabetinde donen yanit: yas ve hesaplama zamani GIZLENMEZ."""
+    zaman = float(kayit["zaman"])
+    yas = max(0, int(simdi_ts - zaman))
+    return {**kayit.get("veri", {}), "onbellekten": True,
+            "hesaplama_zamani": zaman_metni(zaman),
+            "onbellek_yasi_saniye": yas,
+            "veri_tazeligi": tazelik_metni(yas, yasam_sn)}
+
+
+def taze_yanit(veri: dict, hesaplama_ts: float, yasam_sn: int) -> dict:
+    """Yeni hesaplanan sonucun yaniti — hesaplama_zamani BURADA DA doludur."""
+    return {**veri, "onbellekten": False,
+            "hesaplama_zamani": zaman_metni(hesaplama_ts),
+            "onbellek_yasi_saniye": 0,
+            "veri_tazeligi": tazelik_metni(0, yasam_sn)}
 
 
 def tum_kayitlar(yasam_sn: Optional[int] = None) -> list:
