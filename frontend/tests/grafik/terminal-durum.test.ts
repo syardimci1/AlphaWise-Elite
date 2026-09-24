@@ -372,3 +372,12 @@ test('kayitHataMetni (Y9): başarıda boş; kota dolunca teknik değil ANLAŞILI
     'Çizimler tarayıcı deposuna yazılamadı: kaydedilemedi: SecurityError: y',
   )
 })
+
+test('C6 sıfırlama ve sekme metinleri: onay geri döndürülemezliği ve kapsamı söyler', () => {
+  assert.match(ARAYUZ_METINLERI.sifirlaOnay, /geri döndürülemez/)
+  assert.match(ARAYUZ_METINLERI.sifirlaOnay, /bu sembol/i)
+  assert.match(ARAYUZ_METINLERI.sifirlaAria, /gösterge/)
+  assert.match(ARAYUZ_METINLERI.sifirlaAria, /çizim/)
+  assert.match(ARAYUZ_METINLERI.baskaSekme, /başka bir sekmede/)
+  assert.match(ARAYUZ_METINLERI.baskaSekme, /üzerine yaz/)
+})

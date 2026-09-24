@@ -169,6 +169,12 @@ export const ARAYUZ_METINLERI = {
   kotaDolu: 'tarayıcı deposu dolu. Değişiklik bu sekmede görünmeye devam ediyor ama sayfa yenilenirse kaybolur; yer açmak için başka sembollerdeki eski çizimler silinebilir.',
   kayitliCizimler: 'Kayıtlı çizimler',
   kayitliGostergeler: 'Kayıtlı göstergeler',
+  sifirla: 'Kayıtlı ayarları sıfırla',
+  sifirlaAria: 'Bu sembol için kayıtlı gösterge ve çizimleri silme',
+  sifirlaOnay: 'Bu sembol için kayıtlı göstergeler ve çizimler silinecek. Bu işlem geri döndürülemez. Devam edilsin mi?',
+  sifirlandi: 'Bu sembol için kayıtlı ayarlar silindi.',
+  sifirlamaHatasi: 'Kayıtlı ayarlar silinemedi',
+  baskaSekme: 'Bu sembolün kayıtlı ayarları başka bir sekmede değişti; bu sekmedeki bir sonraki değişiklik onların üzerine yazacak. Güncel hali görmek için sayfa yenilenebilir.',
 } as const
 
 /** Türetilmemiş (kaynak) veri notu — Y3: türetilmiş veri yerli gibi sunulmaz. */

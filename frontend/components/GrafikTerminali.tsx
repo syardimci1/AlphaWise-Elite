@@ -39,6 +39,7 @@ import type { Depo } from '@/lib/grafik/cizim-kalicilik'
 import { anahtarUret, kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
 import { gostergeAnahtari, gostergeleriKaydet, gostergeleriYukle } from '@/lib/grafik/gosterge-kalicilik'
 import { GecikmeliKayit } from '@/lib/grafik/gecikmeli-kayit'
+import { baskaSekmeDegistirdi, kayitlariSifirla } from '@/lib/grafik/kalicilik-sifirlama'
 import type { Bar } from '@/lib/grafik/zaman-dilimi'
 import { hamBarlariCevir, resample } from '@/lib/grafik/zaman-dilimi'
 import type { CizimKimligi, TerminalDurum, TerminalEylem } from '@/lib/grafik/terminal-durum'
@@ -173,6 +174,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
    * bir sekmenin yazdığı daha yeni kaydı eski veriyle ezerdi (E11'de ölçüldü).
    */
   const depodakiRef = useRef(new Map<string, string>())
+  const [baskaSekmeNotu, setBaskaSekmeNotu] = useState('')
 
   // NEDEN useReducer DEĞİL useState: tıklama akışında durumu üreten
   // `tiklamaSonucu` ZATEN tam bir `TerminalDurum` döndürür. useReducer ile
@@ -400,6 +402,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), JSON.stringify(gostergeSonucu.gostergeler))
     setYuklenenGostergeAnahtari(gostergeAnahtari(etkinKimlik, symbol))
     setDepoNotu(yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari) ?? '')
+    setBaskaSekmeNotu('') // yeni ad alanı: önceki sembolün sekme uyarısı geçersiz
     setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
   }, [bayrak, symbol, etkinKimlik, terminalGonder])
 
@@ -470,6 +473,19 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
       kayitci.bosalt()
     }
   }, [kayitci])
+
+  // 6d) Başka sekme aynı ad alanına yazdıysa GÖRÜNÜR uyarı (ADR-5, seçenek C).
+  //     Otomatik yeniden yükleme yapılmaz: iki sekme arasında yaz→olay→yükle
+  //     döngüsü riski taşır. `storage` olayı yazan sekmenin kendisinde tetiklenmez.
+  useEffect(() => {
+    if (bayrak !== 'acik' || etkinKimlik === null) return
+    const izlenenler = [anahtarUret(etkinKimlik, symbol), gostergeAnahtari(etkinKimlik, symbol)]
+    const olay = (e: StorageEvent): void => {
+      if (baskaSekmeDegistirdi(e.key, izlenenler)) setBaskaSekmeNotu(ARAYUZ_METINLERI.baskaSekme)
+    }
+    window.addEventListener('storage', olay)
+    return () => window.removeEventListener('storage', olay)
+  }, [bayrak, etkinKimlik, symbol])
 
   // 7) Çizim durumunu primitive'e ver (o da grafikten yeniden boyama ister).
   useEffect(() => {
@@ -565,6 +581,29 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     return () => window.removeEventListener('keydown', tus)
   }, [bayrak, cizimDurum.seciliId])
 
+  // C6: bu kullanıcı + bu sembol için kayıtlı ayarları silme. Onay istenir;
+  // çizim belgesi YUKLE([]) ile açılır — geri al yığını da temizlenir, çünkü
+  // silinen kayda "geri al" ile dönmek sıfırlamayı sessizce geri çevirirdi.
+  const kayitlariSil = (): void => {
+    if (etkinKimlik === null) return
+    if (!window.confirm(ARAYUZ_METINLERI.sifirlaOnay)) return
+    const { depo, hata: depoHatasi } = depoAl()
+    if (depo === null) {
+      setHata(`${ARAYUZ_METINLERI.sifirlamaHatasi}: ${depoHatasi ?? ''}`)
+      return
+    }
+    const sonuc = kayitlariSifirla(depo, kayitci, etkinKimlik, symbol)
+    // Boş durum "depoda" sayılır: kaydetme efekti silinen anahtarları yeniden yaratmaz.
+    depodakiRef.current.set(anahtarUret(etkinKimlik, symbol), '[]')
+    depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), '[]')
+    cizimGonder({ tip: 'YUKLE', cizimler: [] })
+    terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: [] })
+    setGostergeKayitHatasi('')
+    setBaskaSekmeNotu('')
+    setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.sifirlamaHatasi}: ${sonuc.hata ?? ''}`)
+    setDepoNotu(sonuc.basarili ? ARAYUZ_METINLERI.sifirlandi : '')
+  }
+
   const pngIndir = (): void => {
     const grafik = grafikRef.current
     if (grafik === null) return
@@ -593,7 +632,9 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     dilimSonucu.eksikSonKova,
   )
   const veriUyarisi = veriNotu(atlananHam, dilimSonucu.atlanan)
-  const gosterilecekNot = [veriUyarisi, depoNotu, not].filter((m) => m !== null && m !== '').join(' · ')
+  const gosterilecekNot = [veriUyarisi, depoNotu, baskaSekmeNotu, not]
+    .filter((m) => m !== null && m !== '')
+    .join(' · ')
 
   return (
     <section
@@ -719,6 +760,15 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
           style={dugmeStili(false, false)}
         >
           {ARAYUZ_METINLERI.png}
+        </button>
+        <button
+          type="button"
+          aria-label={ARAYUZ_METINLERI.sifirlaAria}
+          disabled={etkinKimlik === null}
+          onClick={kayitlariSil}
+          style={dugmeStili(false, etkinKimlik === null)}
+        >
+          {ARAYUZ_METINLERI.sifirla}
         </button>
         <span style={{ color: RENK.soluk, fontSize: 11, alignSelf: 'center' }}>
           {ARAYUZ_METINLERI.klavyeIpucu}

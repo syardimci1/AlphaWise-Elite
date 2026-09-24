@@ -265,6 +265,66 @@ senaryo('E8 localStorage kapalı (gizli mod benzetimi): terminal çalışır, no
   if (!(await cizimVar(s))) throw new Error('çizim yapılamadı')
 })
 
+senaryo('E12 (C6, Y12) sıfırlama KLAVYEYLE: onay → iki kayıt silinir, geri yazılmaz; vazgeçme bir şey yapmaz', async (baglam) => {
+  const s = await baglam.newPage()
+  await ac(s)
+  await gostergeTikla(s, 'SMA 20')
+  await yatayCiz(s)
+  await gostergeTikla(s, 'RSI 14') // yazım HÂLÂ bekliyor: sıfırlama onu iptal etmeli
+  const dugme = s.locator('button[aria-label="Bu sembol için kayıtlı gösterge ve çizimleri silme"]')
+  // 1) Vazgeç
+  s.once('dialog', (d) => d.dismiss())
+  await dugme.focus()
+  await s.keyboard.press('Enter')
+  await bekle(s)
+  esit(await basiliListe(s), ['SMA 20', 'RSI 14'], 'vazgeçince seçim')
+  // 2) Onayla — Tab ile odaklanabilirlik: düğme odak sırasında mı?
+  let odakta = false
+  await s.locator('button[aria-label="Grafiği PNG dosyası olarak indirme"]').focus()
+  await s.keyboard.press('Tab')
+  odakta = await dugme.evaluate((d) => d === document.activeElement)
+  if (!odakta) throw new Error('sıfırla düğmesi Tab sırasında PNG düğmesinden sonra değil')
+  let onayMetni = ''
+  s.once('dialog', (d) => { onayMetni = d.message(); d.accept() })
+  await s.keyboard.press('Enter')
+  await gostergeTikla(s, 'MACD (12, 26, 9)') // sıfırlamadan SONRAKİ değişiklik kaydedilmeli
+  await gostergeTikla(s, 'MACD (12, 26, 9)') // ve geri kapatılınca boş kalmalı
+  await bekle(s, 800)
+  if (!onayMetni.includes('geri döndürülemez')) throw new Error(`onay metni: ${onayMetni}`)
+  if (!(await metin(s)).includes('Bu sembol için kayıtlı ayarlar silindi.')) throw new Error('sıfırlama bildirimi yok')
+  esit(await basiliListe(s), [], 'sıfırlama sonrası göstergeler')
+  if (await cizimVar(s)) throw new Error('sıfırlama sonrası çizim kaldı')
+  if (!(await s.locator('button[aria-label="Son çizim işlemini geri alma"]').isDisabled())) throw new Error('geri al sıfırlamayı geri çevirebiliyor')
+  const d = await depo(s)
+  if (d[CIZIM_A] !== undefined) throw new Error(`çizim anahtarı geri yazıldı: ${d[CIZIM_A]}`)
+  const g = d[GOSTERGE_A] === undefined ? [] : JSON.parse(d[GOSTERGE_A]).gostergeler
+  esit(g, [], 'gösterge kaydı')
+  await s.reload()
+  await ac(s)
+  esit(await basiliListe(s), [], 'yenileme sonrası')
+  if (await cizimVar(s)) throw new Error('yenileme sonrası çizim var')
+})
+
+senaryo('E13 iki sekme aynı sembol: diğer sekme görünür uyarı alır; farklı sembol uyarı almaz', async (baglam) => {
+  const a = await baglam.newPage()
+  const b = await baglam.newPage()
+  const c = await baglam.newPage()
+  await ac(a)
+  await ac(b)
+  await ac(c, { sembol: 'TSLA' })
+  await gostergeTikla(a, 'SMA 50')
+  await bekle(a)
+  await bekle(b, 200)
+  const tb = await metin(b)
+  if (!tb.includes('başka bir sekmede değişti')) throw new Error(`B uyarı almadı: ${tb}`)
+  if ((await metin(a)).includes('başka bir sekmede')) throw new Error('yazan sekme kendine uyarı gösterdi')
+  if ((await metin(c)).includes('başka bir sekmede')) throw new Error('TSLA sekmesi AAPL için uyarı aldı')
+  // Son yazan kazanır — ve bu artık SESSİZ değil (B'de uyarı vardı).
+  await gostergeTikla(b, 'EMA 20')
+  await bekle(b)
+  esit(JSON.parse((await depo(b))[GOSTERGE_A]).gostergeler, ['ema20'], 'son yazan kazanır')
+})
+
 /** Geçerli bir `Cizim` (cizim-model şeması) - büyük kayıt senaryoları için. */
 function ornekCizim(i) {
   return {
