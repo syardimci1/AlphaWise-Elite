@@ -200,6 +200,31 @@ senaryo('E5 (H-1) aynı sekmede kullanıcı değişimi: A-nın verisi B-nin anah
   esit(await basiliListe(s), [], 'B ekranı')
 })
 
+senaryo('E5b (H-1) kullanıcı değişiminin HER anında sekme kapanabilir: hiçbir boşaltma sızıntı yazmaz', async (baglam) => {
+  // Debounce, sızan yazımı bir sonraki render'daki doğru yazımla DEĞİŞTİRİR; sızıntı
+  // yalnızca iki render ARASINDA sekme kapanırsa depoya ulaşır. Bu senaryo o anı
+  // arar: prop değişiminden sonra her makro görevde pagehide (= bosalt) tetiklenir.
+  const s = await baglam.newPage()
+  await ac(s, { kimlik: 'kullanici-A', prop: true })
+  await gostergeTikla(s, 'Bollinger (20, 2)')
+  await yatayCiz(s)
+  await bekle(s)
+  const aCizimleri = JSON.parse((await depo(s))[CIZIM_A]).cizimler.map((c) => c.id)
+  await s.evaluate(async () => {
+    window.ciz('AAPL', 'kullanici-B')
+    for (let i = 0; i < 30; i += 1) {
+      await new Promise((tamam) => setTimeout(tamam, 0))
+      window.dispatchEvent(new Event('pagehide'))
+    }
+  })
+  await bekle(s)
+  const sizanlar = (await yazimlar(s)).filter(
+    (y) => (y.anahtar === CIZIM_B && aCizimleri.some((id) => y.deger.includes(id))) ||
+      (y.anahtar === GOSTERGE_B && y.deger.includes('bollinger20')),
+  )
+  esit(sizanlar.map((y) => y.anahtar), [], 'boşaltmayla B anahtarına yazılan A verisi')
+})
+
 senaryo('E6 (C4) bozuk ve ileri sürüm kayıt: çökme yok, görünür uyarı, sonra onarılır', async (baglam) => {
   const s = await baglam.newPage()
   await s.goto(`${KOK}/bos`)

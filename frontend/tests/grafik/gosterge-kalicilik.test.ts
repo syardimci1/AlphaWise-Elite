@@ -195,3 +195,15 @@ test('GOSTERGE KALICILIK (Y9): kota disi yazma hatasi kota diye etiketlenmez', (
   assert.equal(sonuc.basarili, false)
   assert.equal(sonuc.kotaDoldu, undefined)
 })
+
+// ---------------------------------------------------------------- FAZ 4: kasten kirma
+
+test('GOSTERGE KALICILIK (Y14): 100 000 ogelik elle bozulmus kayit - cokmez, sinirli sure, kanonik sonuc', () => {
+  const ham = Array.from({ length: 100_000 }, (_, i) => (i % 2 === 0 ? 'sma20' : `uydurma-${i}`))
+  const t0 = performance.now()
+  const sonuc = hamYukle(JSON.stringify({ v: 1, gostergeler: ham }))
+  const sure = performance.now() - t0
+  assert.deepEqual(sonuc.gostergeler, ['sma20'])
+  assert.equal(sonuc.uyari, '50000 gosterge taninmadigi icin atlandi')
+  assert.ok(sure < 500, `yukleme ${sure.toFixed(1)} ms surdu`)
+})

@@ -1,0 +1,10 @@
+ÖLDÜ   M1 debounce kaldırıldı (planla hemen yazar)  [# fail 5 ]
+ÖLDÜ   M2 şema sürüm kontrolü bozuldu (v yok sayılır)  [# fail 1 ]
+ÖLDÜ   M3 ad alanı anahtarı sabitlendi (kimlik yok sayılır)  [# fail 10 ]
+ÖLDÜ   M4 H-1 kapısı geri alındı (çizim kaydı yalnızca sembole bakar)  [KALDI  E5b (H-1) kullanıcı değişiminin HER anında sekme kapanabilir: hiçbir boşaltma sızıntı yazmaz ]
+ÖLDÜ   M5 yankı kapısı kaldırıldı (yüklenen veri geri yazılır)  [KALDI  E11 (Y14) 1000 kayıtlı çizim: yükleme + ekleme çalışır, sayfa hatası yok ]
+ÖLDÜ   M6 sıfırlamada bekleyen yazım iptali kaldırıldı  [# fail 1 ]
+ÖLDÜ   M7 pagehide/kaldırma boşaltması kaldırıldı  [# fail 2 ]
+ÖLDÜ   M8 kota tanıma bozuldu (her hata kota değil)  [# fail 3 ]
+
+hayatta kalan / bulunamayan: 0
