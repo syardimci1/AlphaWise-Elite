@@ -36,7 +36,7 @@ import { CizimPrimitive } from '@/lib/grafik/cizim-primitive'
 import { GostergeKatmani } from '@/lib/grafik/gosterge-katmani'
 import { GOSTERGE_TANIMLARI, tumGostergeKimlikleri } from '@/lib/grafik/gosterge-tanim'
 import type { Depo } from '@/lib/grafik/cizim-kalicilik'
-import { kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
+import { anahtarUret, kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
 import { gostergeAnahtari, gostergeleriKaydet, gostergeleriYukle } from '@/lib/grafik/gosterge-kalicilik'
 import type { Bar } from '@/lib/grafik/zaman-dilimi'
 import { hamBarlariCevir, resample } from '@/lib/grafik/zaman-dilimi'
@@ -147,7 +147,14 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
   const [barlar, setBarlar] = useState<Bar[]>([])
   const [atlananHam, setAtlananHam] = useState(0)
   const [grafikHazir, setGrafikHazir] = useState(false)
-  const [yuklenenSembol, setYuklenenSembol] = useState<string | null>(null)
+  /**
+   * Çizimlerin YÜKLENDİĞİ anahtar (kimlik+sembol). H-1 (24.09.2026): kapı
+   * önceden yalnızca sembolü karşılaştırıyordu; aynı sembolde kullanıcı A→B
+   * değişince kaydetme efekti, yükleme efektinin kuyruğa koyduğu B çizimleri
+   * henüz uygulanmadan A'nın çizimlerini B'nin anahtarına yazıyordu (gerçek
+   * Chromium'da ölçüldü: kanit/kalicilik/e2e E5).
+   */
+  const [yuklenenCizimAnahtari, setYuklenenCizimAnahtari] = useState<string | null>(null)
   const [depoNotu, setDepoNotu] = useState('')
   /**
    * Gösterge seçiminin YÜKLENDİĞİ anahtar (ADR-5). Kaydetme yalnızca bu,
@@ -370,7 +377,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     const { depo, hata: depoHatasi } = depoAl()
     if (depo === null) {
       setDepoNotu(`${ARAYUZ_METINLERI.kayitHatasi}: ${depoHatasi ?? ''}`)
-      setYuklenenSembol(symbol)
+      setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
       return
     }
     const sonuc = yukle(depo, etkinKimlik, symbol)
@@ -381,16 +388,19 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: gostergeSonucu.gostergeler })
     setYuklenenGostergeAnahtari(gostergeAnahtari(etkinKimlik, symbol))
     setDepoNotu(yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari) ?? '')
-    setYuklenenSembol(symbol)
+    setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
   }, [bayrak, symbol, etkinKimlik, terminalGonder])
 
   // 6) Çizim değişince kaydet. YÜKLEME BİTMEDEN yazılmaz: aksi halde boş
   //    başlangıç durumu, kayıtlı çizimlerin üzerine yazılırdı.
   useEffect(() => {
-    if (bayrak !== 'acik' || yuklenenSembol !== symbol) return
+    if (bayrak !== 'acik') return
     // Kimlik yoksa KAYDEDİLMEZ (yüklemeyle simetrik): yanlış ad alanına
     // yazmak, sonraki oturumda başkasının çizimleriyle karışmak olurdu.
     if (etkinKimlik === null) return
+    // Kapı ANAHTARIN TAMAMIDIR (H-1): bu ad alanının yüklemesi uygulanmadan
+    // eldeki çizimler başka bir kullanıcıya/sembole aittir.
+    if (yuklenenCizimAnahtari !== anahtarUret(etkinKimlik, symbol)) return
     const { depo } = depoAl()
     if (depo === null) return
     const sonuc = kaydet(depo, etkinKimlik, symbol, cizimDurum.cizimler)
@@ -399,7 +409,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     // sorun çözüldükten sonra da kullanıcıyı yanıltıyordu. Başarılı kayıt
     // kendi hatasını kendisi temizler.
     setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.kayitHatasi}: ${sonuc.hata ?? ''}`)
-  }, [bayrak, yuklenenSembol, symbol, etkinKimlik, cizimDurum.cizimler])
+  }, [bayrak, yuklenenCizimAnahtari, symbol, etkinKimlik, cizimDurum.cizimler])
 
   // 6b) Gösterge seçimi değişince kaydet (ADR-5). Kapı ANAHTARIN TAMAMIDIR
   //     (kullanıcı+sembol): yükleme bu ad alanı için bitmeden yazılmaz.
