@@ -301,6 +301,32 @@ export default function PentagonSkor({ veri }: Props) {
           </svg> ölçülemedi / uygulanamaz (sıfır değildir)
         </span>
       </div>
+
+      {/* --- YASAL UYARI (AB-043) ---
+          Servis (:8330) HER yanitta tam bir `yasal_uyari` metni donduruyordu
+          ama on yuz bu alani yalnizca TIP olarak taniyor, hic RENDER
+          ETMIYORDU (76. satirda tip tanimi vardi, govdede tek kullanim yoktu).
+          Yani servisin gonderdigi feragatname ekrana hic ulasmiyordu.
+
+          UC KURAL:
+          1. Metin SERVISTEN gelir. On yuzde sabit kopya OLUSTURULMAZ - iki
+             ayri yerde tutulan bir feragatname sessizce ayrisir ve hangisinin
+             gecerli oldugu belirsizlesir.
+          2. Render KOSULLUDUR. Alan yoksa hicbir kutu cizilmez: bos bir
+             feragat kutusu, aslinda verilmemis bir uyarinin verilmis gibi
+             gorunmesidir (fabrikasyon).
+          3. Besgen GEOMETRISINE dokunulmadi - bu blok cizimden SONRA,
+             kardes bir dugum olarak eklendi. */}
+      {veri.yasal_uyari && (
+        <div
+          role="note"
+          style={{ color: RENK.ikincil, fontSize: 10, lineHeight: 1.5,
+                   marginTop: 12, paddingTop: 10,
+                   borderTop: `1px solid ${RENK.cizgi}`, whiteSpace: 'pre-line' }}
+        >
+          {veri.yasal_uyari}
+        </div>
+      )}
     </div>
   )
 }
