@@ -24,6 +24,22 @@ yok" ile "olculdu ve zayif" hicbir yerde birbirine karismaz.
 Genel puan, olculebilen eksenlerin DUZ ORTALAMASIDIR. Agirliklandirma
 bilincli olarak YAPILMADI: depoda kalibre edilmis bir agirlik seti yok ve
 uydurulmus agirliklar sonuca sahte bir kesinlik katardi.
+
+EN DUSUK EKSEN VE DAGILIM — SALT BILDIRIM
+=========================================
+Duz ortalama tek bir cokmus ekseni gizleyebilir (olculen ornek: genel 74,6
+iken degerleme ekseni 9,0). Bunu gorunur kilmak icin en_dusuk_eksen ve
+eksen_dagilimi (min/maks/yayilim) bildirilir.
+
+Bu alanlar genel_puan'i DEGISTIRMEZ. Sabit esikli bir veto/tavan kapisi
+bilincli olarak ALINMADI: kalibre edilmemis bir esik, yukaridaki
+"uydurulmus agirlik" gerekcesinin ta kendisi olurdu. Kullanici zayif ekseni
+gorur, puani biz asagi cekmeyiz.
+
+Iki kisit: (1) yalnizca OLCULDU durumundaki eksenler hesaba girer —
+olculemedi/uygulanamaz bir eksen "en dusuk" sayilsaydi eksik veri fiilen
+sifir muamelesi gorurdu; (2) genel puanin uretilmedigi yerde bu alanlar da
+None kalir, gerekcesi genel_gerekce'dedir.
 """
 from __future__ import annotations
 from typing import Optional
@@ -85,12 +101,21 @@ def sentezle(sirket: skorlar.Sirket, risksiz_faiz: Optional[float] = None) -> di
     olculen = [e for e in eksenler if e["durum"] == OLCULDU]
     if len(olculen) < ASGARI_EKSEN:
         genel = None
+        en_dusuk = None
+        dagilim = None
         genel_gerekce = (
             f"Genel puan üretilmedi: {len(olculen)} eksen ölçülebildi, "
             f"en az {ASGARI_EKSEN} gerekiyor. "
             "Eksik ölçüm sıfır olarak sayılmaz.")
     else:
         genel = round(sum(e["puan"] for e in olculen) / len(olculen), 1)
+        puanlar = [e["puan"] for e in olculen]
+        # Esitlikte EKSEN_TANIMLARI sirasindaki ilk eksen secilir: ayni girdi
+        # her zaman ayni ekseni bildirir.
+        dusuk = min(olculen, key=lambda e: e["puan"])
+        en_dusuk = {"anahtar": dusuk["anahtar"], "puan": dusuk["puan"]}
+        dagilim = {"min": min(puanlar), "maks": max(puanlar),
+                   "yayilim": round(max(puanlar) - min(puanlar), 1)}
         genel_gerekce = (f"{len(olculen)} ölçülebilen eksenin düz ortalaması. "
                          "Ağırlıklandırma yapılmadı: kalibre edilmiş bir ağırlık "
                          "seti bulunmadığı için uydurulmuş ağırlık sahte kesinlik "
@@ -100,6 +125,8 @@ def sentezle(sirket: skorlar.Sirket, risksiz_faiz: Optional[float] = None) -> di
         "eksenler": eksenler,
         "genel_puan": genel,
         "genel_gerekce": genel_gerekce,
+        "en_dusuk_eksen": en_dusuk,
+        "eksen_dagilimi": dagilim,
         "olculebilen_eksen": len(olculen),
         "toplam_eksen": len(eksenler),
         "asgari_eksen": ASGARI_EKSEN,
