@@ -36,7 +36,10 @@ import { CizimPrimitive } from '@/lib/grafik/cizim-primitive'
 import { GostergeKatmani } from '@/lib/grafik/gosterge-katmani'
 import { GOSTERGE_TANIMLARI, tumGostergeKimlikleri } from '@/lib/grafik/gosterge-tanim'
 import type { Depo } from '@/lib/grafik/cizim-kalicilik'
-import { kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
+import { anahtarUret, kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
+import { gostergeAnahtari, gostergeleriKaydet, gostergeleriYukle } from '@/lib/grafik/gosterge-kalicilik'
+import { GecikmeliKayit } from '@/lib/grafik/gecikmeli-kayit'
+import { baskaSekmeDegistirdi, kayitlariSifirla } from '@/lib/grafik/kalicilik-sifirlama'
 import type { Bar } from '@/lib/grafik/zaman-dilimi'
 import { hamBarlariCevir, resample } from '@/lib/grafik/zaman-dilimi'
 import type { CizimKimligi, TerminalDurum, TerminalEylem } from '@/lib/grafik/terminal-durum'
@@ -52,7 +55,9 @@ import {
   gunIciNeden,
   terminalReducer,
   tiklamaSonucu,
+  kayitHataMetni,
   veriNotu,
+  yuklemeNotu,
 } from '@/lib/grafik/terminal-durum'
 
 type Props = {
@@ -145,8 +150,31 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
   const [barlar, setBarlar] = useState<Bar[]>([])
   const [atlananHam, setAtlananHam] = useState(0)
   const [grafikHazir, setGrafikHazir] = useState(false)
-  const [yuklenenSembol, setYuklenenSembol] = useState<string | null>(null)
+  /**
+   * Çizimlerin YÜKLENDİĞİ anahtar (kimlik+sembol). H-1 (24.09.2026): kapı
+   * önceden yalnızca sembolü karşılaştırıyordu; aynı sembolde kullanıcı A→B
+   * değişince kaydetme efekti, yükleme efektinin kuyruğa koyduğu B çizimleri
+   * henüz uygulanmadan A'nın çizimlerini B'nin anahtarına yazıyordu (gerçek
+   * Chromium'da ölçüldü: kanit/kalicilik/e2e E5).
+   */
+  const [yuklenenCizimAnahtari, setYuklenenCizimAnahtari] = useState<string | null>(null)
   const [depoNotu, setDepoNotu] = useState('')
+  /**
+   * Gösterge seçiminin YÜKLENDİĞİ anahtar (ADR-5). Kaydetme yalnızca bu,
+   * o anki kullanıcı+sembolün anahtarına eşitken yapılır: aksi halde önceki
+   * sembolün/kullanıcının seçimi yeni ad alanına yazılırdı.
+   */
+  const [yuklenenGostergeAnahtari, setYuklenenGostergeAnahtari] = useState<string | null>(null)
+  const [gostergeKayitHatasi, setGostergeKayitHatasi] = useState('')
+  /** Anahtar başına debounce'lu yazıcı (C5). Bileşen ömrü boyunca tek örnek. */
+  const [kayitci] = useState(() => new GecikmeliKayit())
+  /**
+   * Anahtar başına depoda OLDUĞU bilinen içerik (JSON). Yüklenen veri geri
+   * yazılmaz: debounce ile bu "yankı" yazımı 300 ms gecikir ve o arada başka
+   * bir sekmenin yazdığı daha yeni kaydı eski veriyle ezerdi (E11'de ölçüldü).
+   */
+  const depodakiRef = useRef(new Map<string, string>())
+  const [baskaSekmeNotu, setBaskaSekmeNotu] = useState('')
 
   // NEDEN useReducer DEĞİL useState: tıklama akışında durumu üreten
   // `tiklamaSonucu` ZATEN tam bir `TerminalDurum` döndürür. useReducer ile
@@ -361,31 +389,103 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     const { depo, hata: depoHatasi } = depoAl()
     if (depo === null) {
       setDepoNotu(`${ARAYUZ_METINLERI.kayitHatasi}: ${depoHatasi ?? ''}`)
-      setYuklenenSembol(symbol)
+      setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
       return
     }
     const sonuc = yukle(depo, etkinKimlik, symbol)
     cizimGonder({ tip: 'YUKLE', cizimler: sonuc.cizimler })
-    setDepoNotu(sonuc.uyari ?? '')
-    setYuklenenSembol(symbol)
-  }, [bayrak, symbol, etkinKimlik])
+    depodakiRef.current.set(anahtarUret(etkinKimlik, symbol), JSON.stringify(sonuc.cizimler))
+    // Göstergeler de aynı anda, aynı ad alanından (ADR-5). Kaydı olmayan
+    // sembol boş seçimle açılır: seçim sembole aittir, sembolden sembole taşınmaz.
+    const gostergeSonucu = gostergeleriYukle(depo, etkinKimlik, symbol)
+    terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: gostergeSonucu.gostergeler })
+    depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), JSON.stringify(gostergeSonucu.gostergeler))
+    setYuklenenGostergeAnahtari(gostergeAnahtari(etkinKimlik, symbol))
+    setDepoNotu(yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari) ?? '')
+    setBaskaSekmeNotu('') // yeni ad alanı: önceki sembolün sekme uyarısı geçersiz
+    setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
+  }, [bayrak, symbol, etkinKimlik, terminalGonder])
 
   // 6) Çizim değişince kaydet. YÜKLEME BİTMEDEN yazılmaz: aksi halde boş
   //    başlangıç durumu, kayıtlı çizimlerin üzerine yazılırdı.
   useEffect(() => {
-    if (bayrak !== 'acik' || yuklenenSembol !== symbol) return
+    if (bayrak !== 'acik') return
     // Kimlik yoksa KAYDEDİLMEZ (yüklemeyle simetrik): yanlış ad alanına
     // yazmak, sonraki oturumda başkasının çizimleriyle karışmak olurdu.
     if (etkinKimlik === null) return
+    // Kapı ANAHTARIN TAMAMIDIR (H-1): bu ad alanının yüklemesi uygulanmadan
+    // eldeki çizimler başka bir kullanıcıya/sembole aittir.
+    if (yuklenenCizimAnahtari !== anahtarUret(etkinKimlik, symbol)) return
     const { depo } = depoAl()
     if (depo === null) return
-    const sonuc = kaydet(depo, etkinKimlik, symbol, cizimDurum.cizimler)
-    // B5 (23.09.2026, bağımsız denetim): hata YALNIZCA bir sonraki başarılı
-    // veri çekiminde temizleniyordu; kayıt/PNG hatası ekranda asılı kalıp
-    // sorun çözüldükten sonra da kullanıcıyı yanıltıyordu. Başarılı kayıt
-    // kendi hatasını kendisi temizler.
-    setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.kayitHatasi}: ${sonuc.hata ?? ''}`)
-  }, [bayrak, yuklenenSembol, symbol, etkinKimlik, cizimDurum.cizimler])
+    // Yazım debounce'lu (C5). Kimlik, sembol ve çizimler BU AN yakalanır:
+    // yazım sembol değiştikten sonra çalışsa da veri kendi anahtarına gider.
+    const kimlik = etkinKimlik
+    const sembol = symbol
+    const cizimler = cizimDurum.cizimler
+    const anahtar = anahtarUret(kimlik, sembol)
+    const icerik = JSON.stringify(cizimler)
+    if (depodakiRef.current.get(anahtar) === icerik) return
+    depodakiRef.current.set(anahtar, icerik)
+    kayitci.planla(anahtar, () => {
+      // B5 (23.09.2026, bağımsız denetim): hata YALNIZCA bir sonraki başarılı
+      // veri çekiminde temizleniyordu; kayıt/PNG hatası ekranda asılı kalıp
+      // sorun çözüldükten sonra da kullanıcıyı yanıltıyordu. Başarılı kayıt
+      // kendi hatasını kendisi temizler.
+      setHata(kayitHataMetni('cizim', kaydet(depo, kimlik, sembol, cizimler)))
+    })
+  }, [bayrak, yuklenenCizimAnahtari, symbol, etkinKimlik, cizimDurum.cizimler, kayitci])
+
+  // 6b) Gösterge seçimi değişince kaydet (ADR-5). Kapı ANAHTARIN TAMAMIDIR
+  //     (kullanıcı+sembol): yükleme bu ad alanı için bitmeden yazılmaz.
+  useEffect(() => {
+    if (bayrak !== 'acik' || etkinKimlik === null) return
+    if (yuklenenGostergeAnahtari !== gostergeAnahtari(etkinKimlik, symbol)) return
+    const { depo } = depoAl()
+    if (depo === null) return
+    const kimlik = etkinKimlik
+    const sembol = symbol
+    const gostergeler = terminal.gostergeler
+    const anahtar = gostergeAnahtari(kimlik, sembol)
+    const icerik = JSON.stringify(gostergeler)
+    if (depodakiRef.current.get(anahtar) === icerik) return
+    depodakiRef.current.set(anahtar, icerik)
+    kayitci.planla(anahtar, () => {
+      const sonuc = gostergeleriKaydet(depo, kimlik, sembol, gostergeler, Date.now())
+      setGostergeKayitHatasi(kayitHataMetni('gosterge', sonuc))
+    })
+  }, [bayrak, etkinKimlik, symbol, yuklenenGostergeAnahtari, terminal.gostergeler, kayitci])
+
+  // 6c) Bekleyen yazımları boşalt: sekme kapanırken/gizlenirken ve bileşen
+  //     kaldırılırken. Debounce'un veri kaybı penceresini bu kapatır (C5).
+  //     `pagehide` mobil tarayıcılarda güvenilmez; `visibilitychange→hidden`
+  //     onların son güvenilir anıdır, ikisi birlikte dinlenir.
+  useEffect(() => {
+    const bosalt = (): void => kayitci.bosalt()
+    const gizlenince = (): void => {
+      if (document.visibilityState === 'hidden') kayitci.bosalt()
+    }
+    window.addEventListener('pagehide', bosalt)
+    document.addEventListener('visibilitychange', gizlenince)
+    return () => {
+      window.removeEventListener('pagehide', bosalt)
+      document.removeEventListener('visibilitychange', gizlenince)
+      kayitci.bosalt()
+    }
+  }, [kayitci])
+
+  // 6d) Başka sekme aynı ad alanına yazdıysa GÖRÜNÜR uyarı (ADR-5, seçenek C).
+  //     Otomatik yeniden yükleme yapılmaz: iki sekme arasında yaz→olay→yükle
+  //     döngüsü riski taşır. `storage` olayı yazan sekmenin kendisinde tetiklenmez.
+  useEffect(() => {
+    if (bayrak !== 'acik' || etkinKimlik === null) return
+    const izlenenler = [anahtarUret(etkinKimlik, symbol), gostergeAnahtari(etkinKimlik, symbol)]
+    const olay = (e: StorageEvent): void => {
+      if (baskaSekmeDegistirdi(e.key, izlenenler)) setBaskaSekmeNotu(ARAYUZ_METINLERI.baskaSekme)
+    }
+    window.addEventListener('storage', olay)
+    return () => window.removeEventListener('storage', olay)
+  }, [bayrak, etkinKimlik, symbol])
 
   // 7) Çizim durumunu primitive'e ver (o da grafikten yeniden boyama ister).
   useEffect(() => {
@@ -481,6 +581,29 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     return () => window.removeEventListener('keydown', tus)
   }, [bayrak, cizimDurum.seciliId])
 
+  // C6: bu kullanıcı + bu sembol için kayıtlı ayarları silme. Onay istenir;
+  // çizim belgesi YUKLE([]) ile açılır — geri al yığını da temizlenir, çünkü
+  // silinen kayda "geri al" ile dönmek sıfırlamayı sessizce geri çevirirdi.
+  const kayitlariSil = (): void => {
+    if (etkinKimlik === null) return
+    if (!window.confirm(ARAYUZ_METINLERI.sifirlaOnay)) return
+    const { depo, hata: depoHatasi } = depoAl()
+    if (depo === null) {
+      setHata(`${ARAYUZ_METINLERI.sifirlamaHatasi}: ${depoHatasi ?? ''}`)
+      return
+    }
+    const sonuc = kayitlariSifirla(depo, kayitci, etkinKimlik, symbol)
+    // Boş durum "depoda" sayılır: kaydetme efekti silinen anahtarları yeniden yaratmaz.
+    depodakiRef.current.set(anahtarUret(etkinKimlik, symbol), '[]')
+    depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), '[]')
+    cizimGonder({ tip: 'YUKLE', cizimler: [] })
+    terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: [] })
+    setGostergeKayitHatasi('')
+    setBaskaSekmeNotu('')
+    setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.sifirlamaHatasi}: ${sonuc.hata ?? ''}`)
+    setDepoNotu(sonuc.basarili ? ARAYUZ_METINLERI.sifirlandi : '')
+  }
+
   const pngIndir = (): void => {
     const grafik = grafikRef.current
     if (grafik === null) return
@@ -509,7 +632,9 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     dilimSonucu.eksikSonKova,
   )
   const veriUyarisi = veriNotu(atlananHam, dilimSonucu.atlanan)
-  const gosterilecekNot = [veriUyarisi, depoNotu, not].filter((m) => m !== null && m !== '').join(' · ')
+  const gosterilecekNot = [veriUyarisi, depoNotu, baskaSekmeNotu, not]
+    .filter((m) => m !== null && m !== '')
+    .join(' · ')
 
   return (
     <section
@@ -636,15 +761,24 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
         >
           {ARAYUZ_METINLERI.png}
         </button>
+        <button
+          type="button"
+          aria-label={ARAYUZ_METINLERI.sifirlaAria}
+          disabled={etkinKimlik === null}
+          onClick={kayitlariSil}
+          style={dugmeStili(false, etkinKimlik === null)}
+        >
+          {ARAYUZ_METINLERI.sifirla}
+        </button>
         <span style={{ color: RENK.soluk, fontSize: 11, alignSelf: 'center' }}>
           {ARAYUZ_METINLERI.klavyeIpucu}
         </span>
       </div>
 
       {/* Hata ve uyarılar GÖRÜNÜR: sessizce boş bir grafik bırakılmaz (Y13). */}
-      {hata !== '' && (
+      {(hata !== '' || gostergeKayitHatasi !== '') && (
         <div role="alert" style={{ color: RENK.hata, fontSize: 12, marginTop: 10 }}>
-          {hata}
+          {[hata, gostergeKayitHatasi].filter((m) => m !== '').join(' · ')}
         </div>
       )}
       {gosterilecekNot !== '' && (

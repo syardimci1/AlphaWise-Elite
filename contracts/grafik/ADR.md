@@ -93,3 +93,42 @@ dakika/saat dilimleri **butonları devre dışı + neden etiketi** ("gün içi v
 | R4 | `limit` iletilmediği için olay marker'ları mum penceresi dışına düşüyor | Orta | Sessizce kaybolan marker | S1'de `limit` parametrelendirilir; pencere dışı marker sayısı raporlanır |
 | R5 | Paralel oturumların frontend dağıtımı çakışabilir | Orta | Birinin imajı diğerinin işini geri alır | FAZ 6: komşuya bildirim + temiz kaynaktan (`origin/main` worktree) build, ana dizinde build YOK (T3) |
 | R6 | Kapsam gerçekçi değil (8 dilim + 7 araç + 6 gösterge tek oturumda) | **Yüksek** | Yarım iş "bitti" diye sunulur | Öncelik sırası + FAZ 8'de bitmeyenler açıkça YAPILMADI olarak raporlanır (Y12/Y15) |
+
+---
+
+## ADR-5 — Gösterge kalıcılığı: çizimle aynı desen, tür başına ayrı anahtar
+
+**Tarih:** 24.09.2026 · Sözleşme: `contracts/grafik/kalicilik_sozlesmesi.md` · Keşif: `kanit/kalicilik/faz1_kesif.md`
+
+**Bağlam.** Açık göstergeler yalnızca React belleğinde (`terminal-durum.ts:43`); sayfa yenilenince kayboluyor.
+Çizimler ADR-2 ile zaten kalıcı.
+
+**Seçenekler — depo.**
+| # | Seçenek | Artı | Eksi |
+|---|---|---|---|
+| A | **localStorage** | ADR-2 ile aynı; senkron okuma → ilk çizimde doğru gösterge seti, titreme yok; bağımlılık yok | ~5 MB kota, ana thread'de senkron yazma |
+| B | IndexedDB | büyük kota, asenkron | asenkron okuma ilk render'da boş set → sonra ikinci render (titreme); sarmalayıcı kodu ya da bağımlılık; ADR-2 ile iki farklı depo |
+| C | Sunucu/DB | cihazlar arası | D1 (kapsam dışı mimari genişleme), yeni uç + kimlik yüzeyi |
+
+**Karar: A.** Gösterge kaydı ~60 bayt; kota ve senkron yazma maliyeti ölçülüp önemsiz bulundu (`KALICILIK_SONUC.md`).
+
+**Seçenekler — veri şekli.**
+| # | Seçenek | Eksi |
+|---|---|---|
+| 1 | Kullanıcı başına tek blob `{v, semboller:{<S>:{gostergeler, cizimler}}}` | mevcut çizim kayıtlarının göçü gerekir; her yazımda tüm sembollerin oku-değiştir-yaz'ı (iki sekme farklı sembollerde bile birbirini ezer); blob büyüdükçe her yazım pahalanır |
+| 2 | **Tür + kullanıcı + sembol başına ayrı anahtar** | sembol listesini çıkarmak için anahtar taraması gerekir (bugün gerekmiyor) |
+
+**Karar: 2.** ADR-2 anahtarlarıyla birebir aynı desen; mevcut çizim verisi göç gerektirmez; yazım maliyeti tek
+sembolle sınırlı; farklı sembollerdeki sekmeler çakışmaz. İstemdeki tek-blob şekli (seçenek 1) bu gerekçelerle
+**bilerek uygulanmadı**.
+
+**Seçenekler — sekmeler arası.** A) yok say (sessiz üzerine yazma — Y8 ihlali) · B) `storage` olayında
+yeniden yükle (iki sekme arasında yaz→olay→yükle→yaz ping-pong'unu önlemek için içerik karşılaştırma
+mantığı gerekir) · C) `storage` olayında **görünür uyarı**. **Karar: C** — kayıp artık sessiz değil, döngü riski yok.
+
+**Sonuçlar.**
+- Ad alanı kodu tek yerde (`adAlaniAnahtari`); gösterge modülü onu çağırır, kopyalamaz.
+- Yazımlar 300 ms debounce'lu; `pagehide`/gizlenme/kaldırmada boşaltılır.
+- Kalıcılık özelliğe ait ayrı bir bayrak EKLENMEDİ: terminal bayrağı kapalıyken bileşen hiçbir depo
+  erişimi yapmaz; kaydı olmayan kullanıcı için varsayılan görünüm (boş gösterge, günlük dilim) değişmedi;
+  "Kayıtlı ayarları sıfırla" kalıcılık öncesi hale dönüşü sağlar.

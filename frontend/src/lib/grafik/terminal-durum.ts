@@ -27,6 +27,7 @@
 // çalışmasını sağlayan tek yoldur; `terminal-durum.test.ts` tablonun tamamını
 // yasaklı kalıp listesinden geçirir.
 
+import type { KaydetSonucu } from './cizim-kalicilik'
 import type { Cizim, CizimTipi, Nokta } from './cizim-model'
 import { GEREKLI_NOKTA_SAYISI, gecerliCizim } from './cizim-model'
 import type { GostergeKimlik } from './gosterge-tanim'
@@ -49,6 +50,8 @@ export type TerminalEylem =
   | { tip: 'ARAC_SEC'; arac: AracKimlik }
   | { tip: 'DILIM_SEC'; dilim: ZamanDilimi }
   | { tip: 'GOSTERGE_DEGISTIR'; kimlik: GostergeKimlik }
+  /** Kayıtlı seçimi uygular (ADR-5): sembol/kullanıcı değişince önceki seçimin YERİNE geçer. */
+  | { tip: 'GOSTERGELERI_YUKLE'; gostergeler: readonly GostergeKimlik[] }
   | { tip: 'NOKTA_EKLE'; nokta: Nokta }
   | { tip: 'CIZIM_IPTAL' }
 
@@ -162,6 +165,16 @@ export const ARAYUZ_METINLERI = {
   // Kimlik çekilemezse çizimler yüklenmez/kaydedilmez. Sessiz kalmak yerine
   // söylüyoruz: kullanıcı çizimlerinin neden görünmediğini bilmeli.
   kimlikHatasi: 'Kullanıcı kimliği okunamadı, çizimler bu oturumda saklanmayacak',
+  gostergeKayitHatasi: 'Gösterge seçimi tarayıcı deposuna yazılamadı',
+  kotaDolu: 'tarayıcı deposu dolu. Değişiklik bu sekmede görünmeye devam ediyor ama sayfa yenilenirse kaybolur; yer açmak için başka sembollerdeki eski çizimler silinebilir.',
+  kayitliCizimler: 'Kayıtlı çizimler',
+  kayitliGostergeler: 'Kayıtlı göstergeler',
+  sifirla: 'Kayıtlı ayarları sıfırla',
+  sifirlaAria: 'Bu sembol için kayıtlı gösterge ve çizimleri silme',
+  sifirlaOnay: 'Bu sembol için kayıtlı göstergeler ve çizimler silinecek. Bu işlem geri döndürülemez. Devam edilsin mi?',
+  sifirlandi: 'Bu sembol için kayıtlı ayarlar silindi.',
+  sifirlamaHatasi: 'Kayıtlı ayarlar silinemedi',
+  baskaSekme: 'Bu sembolün kayıtlı ayarları başka bir sekmede değişti; bu sekmedeki bir sonraki değişiklik onların üzerine yazacak. Güncel hali görmek için sayfa yenilenebilir.',
 } as const
 
 /** Türetilmemiş (kaynak) veri notu — Y3: türetilmiş veri yerli gibi sunulmaz. */
@@ -205,6 +218,16 @@ export function terminalReducer(durum: TerminalDurum, eylem: TerminalEylem): Ter
       // gösterge farklı sıralarda çizilir, alt panellerin yeri her tıklamada
       // değişirdi.
       return { ...durum, gostergeler: tumGostergeKimlikleri().filter((k) => kume.has(k)) }
+    }
+
+    case 'GOSTERGELERI_YUKLE': {
+      const kume = new Set<GostergeKimlik>(eylem.gostergeler)
+      const yeni = tumGostergeKimlikleri().filter((k) => kume.has(k))
+      // Aynı içerik → girdinin kendisi: yeniden render ve gereksiz kayıt tetiklenmez.
+      if (yeni.length === durum.gostergeler.length && yeni.every((k, i) => k === durum.gostergeler[i])) {
+        return durum
+      }
+      return { ...durum, gostergeler: yeni }
     }
 
     case 'NOKTA_EKLE': {
@@ -316,4 +339,34 @@ export function veriNotu(atlananHam: number, atlananDilim: number): string | nul
   if (atlananHam > 0) parcalar.push(`${atlananHam} kayıt biçimi bozuk olduğu için atlandı`)
   if (atlananDilim > 0) parcalar.push(`${atlananDilim} bar tarihi geçersiz olduğu için atlandı`)
   return parcalar.length === 0 ? null : parcalar.join(' · ')
+}
+
+/**
+ * Kayıttan yüklemenin kullanıcıya görünen notu; uyarı yoksa `null`.
+ *
+ * İki kayıt (çizim, gösterge) ayrı okunur ve ikisi de "sıfırlandı" diyebilir;
+ * önek olmadan kullanıcı hangi ayarının gittiğini anlayamazdı (C4: sessiz
+ * kayıp yok, belirsiz kayıp da yok).
+ */
+export function yuklemeNotu(
+  cizimUyarisi: string | undefined,
+  gostergeUyarisi: string | undefined,
+): string | null {
+  const parcalar: string[] = []
+  if (cizimUyarisi) parcalar.push(`${ARAYUZ_METINLERI.kayitliCizimler}: ${cizimUyarisi}`)
+  if (gostergeUyarisi) parcalar.push(`${ARAYUZ_METINLERI.kayitliGostergeler}: ${gostergeUyarisi}`)
+  return parcalar.length === 0 ? null : parcalar.join(' · ')
+}
+
+/**
+ * Kaydetme sonucunun kullanıcıya görünen metni; başarıda boş dizge.
+ *
+ * Y9: kota dolunca teknik hata adı (`QuotaExceededError`) kullanıcıya bir şey
+ * söylemez; ne olduğunu, sonucunu ve ne yapılabileceğini söyleyen metin
+ * gösterilir. Kota dışı hatalarda teknik ayrıntı KORUNUR — tanı için gerekir.
+ */
+export function kayitHataMetni(tur: 'cizim' | 'gosterge', sonuc: KaydetSonucu): string {
+  if (sonuc.basarili) return ''
+  const onek = tur === 'cizim' ? ARAYUZ_METINLERI.kayitHatasi : ARAYUZ_METINLERI.gostergeKayitHatasi
+  return `${onek}: ${sonuc.kotaDoldu === true ? ARAYUZ_METINLERI.kotaDolu : sonuc.hata ?? ''}`
 }

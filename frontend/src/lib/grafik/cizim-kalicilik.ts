@@ -20,6 +20,12 @@ export interface Depo {
 export interface KaydetSonucu {
   basarili: boolean
   hata?: string
+  /**
+   * Yazma, tarayici deposu KOTASI doldugu icin basarisiz oldu (Y9). Ayri bir
+   * isaret: arayuz bu durumda teknik hata adini degil, kullanicinin ne
+   * yapabilecegini soyleyen bir metin gosterir.
+   */
+  kotaDoldu?: true
 }
 
 export interface YuklemeSonucu {
@@ -53,17 +59,51 @@ function parcaKacisla(parca: string): string {
  * tip bilerek genisletildi - daralmadi, mevcut tum cagrilar gecerli kalir.
  */
 export function anahtarUret(kullaniciKimligi: string | null | undefined, sembol: string): string {
+  return adAlaniAnahtari(ANAHTAR_ONEKI, kullaniciKimligi, sembol)
+}
+
+/**
+ * Kullanici+sembol ad alanli anahtar: `<onek>:<kullanici>:<SEMBOL>`.
+ *
+ * NEDEN DISA ACIK: gosterge kaliciligi (ADR-5) ayni ad alanlama desenini
+ * kullanir. Kacislama ve normalizasyon kiraci izolasyonunun kendisidir;
+ * ikinci bir kopyasi sessizce ayrisip bir turu sizintiya acik birakirdi.
+ */
+export function adAlaniAnahtari(
+  onek: string,
+  kullaniciKimligi: string | null | undefined,
+  sembol: string,
+): string {
   const kimlik = typeof kullaniciKimligi === 'string' && kullaniciKimligi.trim() !== ''
     ? kullaniciKimligi.trim()
     : ANONIM_KIMLIK
   // toLocaleUpperCase DEGIL: Turkce yerelde 'i' -> 'İ' olur ve ayni sembol iki
   // farkli anahtar uretirdi. toUpperCase yerelden bagimsizdir (determinizm).
   const normalSembol = sembol.trim().toUpperCase()
-  return `${ANAHTAR_ONEKI}:${parcaKacisla(kimlik)}:${parcaKacisla(normalSembol)}`
+  return `${onek}:${parcaKacisla(kimlik)}:${parcaKacisla(normalSembol)}`
 }
 
 function hataMetni(hata: unknown): string {
   return hata instanceof Error ? `${hata.name}: ${hata.message}` : String(hata)
+}
+
+/**
+ * Hata bir depolama KOTASI hatasi mi? Tarayicilar farkli bicimler kullanir:
+ * Chromium/WebKit `QuotaExceededError`, eski Firefox `NS_ERROR_DOM_QUOTA_REACHED`,
+ * eski WebKit yalnizca `code === 22`. Ad eslesmesi Error/DOMException disi
+ * degerlerde yapilmaz (duz bir metin kota hatasi degildir).
+ */
+export function kotaHatasiMi(hata: unknown): boolean {
+  if (!(hata instanceof Error)) return false
+  if (hata.name === 'QuotaExceededError' || hata.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true
+  return (hata as { code?: unknown }).code === 22
+}
+
+/** Yakalanan yazma hatasini KaydetSonucu'na cevirir; kota ayri isaretlenir. */
+export function yazmaHatasi(hata: unknown): KaydetSonucu {
+  const sonuc: KaydetSonucu = { basarili: false, hata: `kaydedilemedi: ${hataMetni(hata)}` }
+  if (kotaHatasiMi(hata)) sonuc.kotaDoldu = true
+  return sonuc
 }
 
 /**
@@ -81,14 +121,24 @@ function cizimMi(deger: unknown): deger is Cizim {
 /** Dizideki gecerli cizimleri ayiklar; atlananlarin SAYISI uyariya yazilir (sessiz kayip yok). */
 function cizimleriAyikla(ham: unknown[], oncekiUyari?: string): YuklemeSonucu {
   const cizimler: Cizim[] = []
+  const kimlikler = new Set<string>()
   let atlanan = 0
+  let yinelenen = 0
   for (const oge of ham) {
-    if (cizimMi(oge)) cizimler.push(oge)
-    else atlanan += 1
+    if (!cizimMi(oge)) atlanan += 1
+    // H-4: reducer YUKLE yinelenen kimlikli listeyi BUTUNUYLE reddeder; burada
+    // ayiklanmazsa kayit hic yuklenmez ve onceki sembolun cizimleri ekranda
+    // kalip bu sembolun anahtarina yazilirdi. Ilk gelen kalir.
+    else if (kimlikler.has(oge.id)) yinelenen += 1
+    else {
+      kimlikler.add(oge.id)
+      cizimler.push(oge)
+    }
   }
   const uyarilar: string[] = []
   if (oncekiUyari !== undefined) uyarilar.push(oncekiUyari)
   if (atlanan > 0) uyarilar.push(`${atlanan} cizim semaya uymadigi icin atlandi`)
+  if (yinelenen > 0) uyarilar.push(`${yinelenen} cizim yinelenen kimlik tasidigi icin atlandi`)
   return uyarilar.length > 0 ? { cizimler, uyari: uyarilar.join('; ') } : { cizimler }
 }
 
@@ -108,7 +158,7 @@ export function kaydet(
     depo.setItem(anahtar, JSON.stringify({ v: SURUM, cizimler }))
     return { basarili: true }
   } catch (hata) {
-    return { basarili: false, hata: `kaydedilemedi: ${hataMetni(hata)}` }
+    return yazmaHatasi(hata)
   }
 }
 

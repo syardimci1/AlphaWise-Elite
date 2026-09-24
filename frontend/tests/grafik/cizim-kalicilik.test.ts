@@ -4,12 +4,13 @@ import assert from 'node:assert/strict'
 import {
   anahtarUret,
   kaydet,
+  kotaHatasiMi,
   yukle,
   sil,
   type Cizim,
   type Depo,
 } from '../../src/lib/grafik/cizim-kalicilik'
-import { gecerliCizim } from '../../src/lib/grafik/cizim-model'
+import { bosDurum, gecerliCizim, reducer as cizimReducer } from '../../src/lib/grafik/cizim-model'
 
 /** Bellek ici sahte depo - gercek localStorage semantigi (yoksa null doner). */
 class BellekDepo implements Depo {
@@ -204,4 +205,42 @@ test('KALICILIK: yukle YAN ETKISIZDIR - bozuk kayit depoda oldugu gibi kalir', (
   assert.equal(depo.getItem(anahtar), 'bozuk')
   // Ayni girdi -> ayni cikti (saflik).
   assert.deepEqual(yukle(depo, 'ali', 'AAPL'), ilk)
+})
+
+test('KALICILIK (Y9): kotaHatasiMi tarayici bicimlerini tanir, digerlerini tanimaz', () => {
+  const adli = (ad: string, kod?: number): Error => {
+    const hata = new Error('x') as Error & { code?: number }
+    hata.name = ad
+    if (kod !== undefined) hata.code = kod
+    return hata
+  }
+  assert.equal(kotaHatasiMi(adli('QuotaExceededError')), true) // Chromium, WebKit
+  assert.equal(kotaHatasiMi(adli('NS_ERROR_DOM_QUOTA_REACHED')), true) // eski Firefox
+  assert.equal(kotaHatasiMi(adli('Error', 22)), true) // eski WebKit: yalnizca kod
+  assert.equal(kotaHatasiMi(adli('SecurityError', 18)), false)
+  assert.equal(kotaHatasiMi('QuotaExceededError'), false) // Error olmayan deger
+  assert.equal(kotaHatasiMi(null), false)
+})
+
+test('KALICILIK (Y9): cizim kaydinda kota asimi kotaDoldu ile isaretlenir', () => {
+  const sonuc = kaydet(new KotaDoluDepo(), 'ali', 'AAPL', ORNEK_CIZIMLER)
+  assert.equal(sonuc.kotaDoldu, true)
+})
+
+test('KALICILIK (H-4): yinelenen kimlik - yukle ciktisi reducer YUKLE tarafindan HER ZAMAN kabul edilir', () => {
+  // Her oge tek basina gecerli ama iki cizim ayni id'yi tasiyor. Duzeltmeden
+  // once yukle ikisini de donduruyordu; reducer YUKLE listeyi butunuyle
+  // REDDEDIYOR, onceki sembolun cizimleri ekranda kalip yeni sembolun
+  // anahtarina yaziliyordu.
+  const depo = new BellekDepo()
+  const kopya = { ...ORNEK_CIZIMLER[1], id: ORNEK_CIZIMLER[0].id }
+  depo.setItem(anahtarUret('ali', 'AAPL'), JSON.stringify({ v: 1, cizimler: [...ORNEK_CIZIMLER, kopya] }))
+  const sonuc = yukle(depo, 'ali', 'AAPL')
+  assert.deepEqual(sonuc.cizimler, ORNEK_CIZIMLER) // ilk gelen kalir
+  assert.match(String(sonuc.uyari), /1 cizim yinelenen kimlik/)
+
+  const onceki = cizimReducer(bosDurum(), { tip: 'YUKLE', cizimler: [ORNEK_CIZIMLER[0]] })
+  const sonraki = cizimReducer(onceki, { tip: 'YUKLE', cizimler: sonuc.cizimler })
+  assert.notEqual(sonraki, onceki)
+  assert.deepEqual(sonraki.cizimler, ORNEK_CIZIMLER)
 })

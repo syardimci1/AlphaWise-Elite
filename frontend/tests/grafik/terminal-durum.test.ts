@@ -20,6 +20,8 @@ import {
   terminalReducer,
   tiklamaSonucu,
   veriNotu,
+  yuklemeNotu,
+  kayitHataMetni,
 } from '../../src/lib/grafik/terminal-durum'
 import type { AracKimlik, TerminalDurum } from '../../src/lib/grafik/terminal-durum'
 import { GEREKLI_NOKTA_SAYISI, gecerliCizim } from '../../src/lib/grafik/cizim-model'
@@ -275,6 +277,9 @@ function tumArayuzMetinleri(): string[] {
     ...GUN_ICI_DILIMLER,
     gunIciNeden(),
     String(veriNotu(3, 2)),
+    kayitHataMetni('cizim', { basarili: false, kotaDoldu: true, hata: 'x' }),
+    kayitHataMetni('gosterge', { basarili: false, kotaDoldu: true, hata: 'x' }),
+    String(yuklemeNotu('bozuk kayit sifirlandi', 'bilinmeyen surum (v=9) sifirlandi')),
   ]
   for (const dilim of DILIM_SIRASI) {
     for (const turetildi of [false, true]) {
@@ -315,4 +320,64 @@ test('B4 REGRESYON: klavye ipucu YIKICI tuşların HEPSİNİ söyler', () => {
   assert.match(ARAYUZ_METINLERI.klavyeIpucu, /Delete/)
   assert.match(ARAYUZ_METINLERI.klavyeIpucu, /Backspace/)
   assert.match(ARAYUZ_METINLERI.klavyeIpucu, /Escape/)
+})
+
+// ---------------------------------------------------------------- KALICILIK (ADR-5)
+
+test('GOSTERGELERI_YUKLE kayıtlı seçimi uygular; araç/dilim/yarım çizime DOKUNMAZ', () => {
+  const baslangic: TerminalDurum = { ...aracli('trend'), dilim: 'haftalik', bekleyenNoktalar: [N1] }
+  const sonuc = terminalReducer(baslangic, { tip: 'GOSTERGELERI_YUKLE', gostergeler: ['rsi14', 'sma20'] })
+  // Kanonik sıra: yüklenen sıra değil, tumGostergeKimlikleri sırası (alt panel yerleri sabit kalsın).
+  assert.deepEqual(sonuc.gostergeler, ['sma20', 'rsi14'])
+  assert.equal(sonuc.arac, 'trend')
+  assert.equal(sonuc.dilim, 'haftalik')
+  assert.deepEqual(sonuc.bekleyenNoktalar, [N1])
+})
+
+test('GOSTERGELERI_YUKLE önceki seçimin YERİNE geçer (sembol değişimi birikmez)', () => {
+  const aapl = terminalReducer(bosTerminalDurum(), { tip: 'GOSTERGELERI_YUKLE', gostergeler: ['macd'] })
+  const tsla = terminalReducer(aapl, { tip: 'GOSTERGELERI_YUKLE', gostergeler: [] })
+  assert.deepEqual(tsla.gostergeler, [])
+})
+
+test('GOSTERGELERI_YUKLE aynı içerikte girdi durumunun KENDİSİNİ döndürür', () => {
+  const durum = terminalReducer(bosTerminalDurum(), { tip: 'GOSTERGELERI_YUKLE', gostergeler: ['ema20'] })
+  // Referans eşitliği: gereksiz render ve gereksiz kayıt tetiklenmez.
+  assert.equal(terminalReducer(durum, { tip: 'GOSTERGELERI_YUKLE', gostergeler: ['ema20'] }), durum)
+})
+
+test('yuklemeNotu: uyarı yoksa null, varsa hangi kayda ait olduğu önekle yazılır', () => {
+  assert.equal(yuklemeNotu(undefined, undefined), null)
+  assert.equal(yuklemeNotu('', undefined), null)
+  assert.equal(yuklemeNotu('bozuk kayit sifirlandi', undefined), 'Kayıtlı çizimler: bozuk kayit sifirlandi')
+  assert.equal(
+    yuklemeNotu(undefined, 'bilinmeyen surum (v=9) sifirlandi'),
+    'Kayıtlı göstergeler: bilinmeyen surum (v=9) sifirlandi',
+  )
+  const ikisi = String(yuklemeNotu('a', 'b'))
+  assert.match(ikisi, /Kayıtlı çizimler: a/)
+  assert.match(ikisi, /Kayıtlı göstergeler: b/)
+})
+
+test('kayitHataMetni (Y9): başarıda boş; kota dolunca teknik değil ANLAŞILIR metin', () => {
+  assert.equal(kayitHataMetni('cizim', { basarili: true }), '')
+  const kota = kayitHataMetni('gosterge', { basarili: false, kotaDoldu: true, hata: 'kaydedilemedi: QuotaExceededError: x' })
+  assert.match(kota, /^Gösterge seçimi tarayıcı deposuna yazılamadı: /)
+  assert.match(kota, /dolu/)
+  assert.match(kota, /yenilenirse/) // sonuç: yenileyince kaybolacağı söylenir
+  assert.doesNotMatch(kota, /QuotaExceededError/)
+  // Kota dışı hata: teknik ayrıntı saklanmaz (tanı için gerekli).
+  assert.equal(
+    kayitHataMetni('cizim', { basarili: false, hata: 'kaydedilemedi: SecurityError: y' }),
+    'Çizimler tarayıcı deposuna yazılamadı: kaydedilemedi: SecurityError: y',
+  )
+})
+
+test('C6 sıfırlama ve sekme metinleri: onay geri döndürülemezliği ve kapsamı söyler', () => {
+  assert.match(ARAYUZ_METINLERI.sifirlaOnay, /geri döndürülemez/)
+  assert.match(ARAYUZ_METINLERI.sifirlaOnay, /bu sembol/i)
+  assert.match(ARAYUZ_METINLERI.sifirlaAria, /gösterge/)
+  assert.match(ARAYUZ_METINLERI.sifirlaAria, /çizim/)
+  assert.match(ARAYUZ_METINLERI.baskaSekme, /başka bir sekmede/)
+  assert.match(ARAYUZ_METINLERI.baskaSekme, /üzerine yaz/)
 })
