@@ -21,6 +21,7 @@ import {
   tiklamaSonucu,
   veriNotu,
   yuklemeNotu,
+  kayitHataMetni,
 } from '../../src/lib/grafik/terminal-durum'
 import type { AracKimlik, TerminalDurum } from '../../src/lib/grafik/terminal-durum'
 import { GEREKLI_NOKTA_SAYISI, gecerliCizim } from '../../src/lib/grafik/cizim-model'
@@ -276,6 +277,8 @@ function tumArayuzMetinleri(): string[] {
     ...GUN_ICI_DILIMLER,
     gunIciNeden(),
     String(veriNotu(3, 2)),
+    kayitHataMetni('cizim', { basarili: false, kotaDoldu: true, hata: 'x' }),
+    kayitHataMetni('gosterge', { basarili: false, kotaDoldu: true, hata: 'x' }),
     String(yuklemeNotu('bozuk kayit sifirlandi', 'bilinmeyen surum (v=9) sifirlandi')),
   ]
   for (const dilim of DILIM_SIRASI) {
@@ -354,4 +357,18 @@ test('yuklemeNotu: uyarı yoksa null, varsa hangi kayda ait olduğu önekle yaz�
   const ikisi = String(yuklemeNotu('a', 'b'))
   assert.match(ikisi, /Kayıtlı çizimler: a/)
   assert.match(ikisi, /Kayıtlı göstergeler: b/)
+})
+
+test('kayitHataMetni (Y9): başarıda boş; kota dolunca teknik değil ANLAŞILIR metin', () => {
+  assert.equal(kayitHataMetni('cizim', { basarili: true }), '')
+  const kota = kayitHataMetni('gosterge', { basarili: false, kotaDoldu: true, hata: 'kaydedilemedi: QuotaExceededError: x' })
+  assert.match(kota, /^Gösterge seçimi tarayıcı deposuna yazılamadı: /)
+  assert.match(kota, /dolu/)
+  assert.match(kota, /yenilenirse/) // sonuç: yenileyince kaybolacağı söylenir
+  assert.doesNotMatch(kota, /QuotaExceededError/)
+  // Kota dışı hata: teknik ayrıntı saklanmaz (tanı için gerekli).
+  assert.equal(
+    kayitHataMetni('cizim', { basarili: false, hata: 'kaydedilemedi: SecurityError: y' }),
+    'Çizimler tarayıcı deposuna yazılamadı: kaydedilemedi: SecurityError: y',
+  )
 })

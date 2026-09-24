@@ -20,6 +20,12 @@ export interface Depo {
 export interface KaydetSonucu {
   basarili: boolean
   hata?: string
+  /**
+   * Yazma, tarayici deposu KOTASI doldugu icin basarisiz oldu (Y9). Ayri bir
+   * isaret: arayuz bu durumda teknik hata adini degil, kullanicinin ne
+   * yapabilecegini soyleyen bir metin gosterir.
+   */
+  kotaDoldu?: true
 }
 
 export interface YuklemeSonucu {
@@ -82,6 +88,25 @@ function hataMetni(hata: unknown): string {
 }
 
 /**
+ * Hata bir depolama KOTASI hatasi mi? Tarayicilar farkli bicimler kullanir:
+ * Chromium/WebKit `QuotaExceededError`, eski Firefox `NS_ERROR_DOM_QUOTA_REACHED`,
+ * eski WebKit yalnizca `code === 22`. Ad eslesmesi Error/DOMException disi
+ * degerlerde yapilmaz (duz bir metin kota hatasi degildir).
+ */
+export function kotaHatasiMi(hata: unknown): boolean {
+  if (!(hata instanceof Error)) return false
+  if (hata.name === 'QuotaExceededError' || hata.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true
+  return (hata as { code?: unknown }).code === 22
+}
+
+/** Yakalanan yazma hatasini KaydetSonucu'na cevirir; kota ayri isaretlenir. */
+export function yazmaHatasi(hata: unknown): KaydetSonucu {
+  const sonuc: KaydetSonucu = { basarili: false, hata: `kaydedilemedi: ${hataMetni(hata)}` }
+  if (kotaHatasiMi(hata)) sonuc.kotaDoldu = true
+  return sonuc
+}
+
+/**
  * JSON'dan gelen bilinmeyen bir degeri Cizim'e daraltir.
  *
  * Alan bazli dogrulama (surum, kimlik, nokta sayisi, sonlu sayi) TEKRARLANMAZ;
@@ -123,7 +148,7 @@ export function kaydet(
     depo.setItem(anahtar, JSON.stringify({ v: SURUM, cizimler }))
     return { basarili: true }
   } catch (hata) {
-    return { basarili: false, hata: `kaydedilemedi: ${hataMetni(hata)}` }
+    return yazmaHatasi(hata)
   }
 }
 

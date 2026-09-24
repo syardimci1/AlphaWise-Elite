@@ -53,6 +53,7 @@ import {
   gunIciNeden,
   terminalReducer,
   tiklamaSonucu,
+  kayitHataMetni,
   veriNotu,
   yuklemeNotu,
 } from '@/lib/grafik/terminal-durum'
@@ -408,7 +409,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     // veri çekiminde temizleniyordu; kayıt/PNG hatası ekranda asılı kalıp
     // sorun çözüldükten sonra da kullanıcıyı yanıltıyordu. Başarılı kayıt
     // kendi hatasını kendisi temizler.
-    setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.kayitHatasi}: ${sonuc.hata ?? ''}`)
+    setHata(kayitHataMetni('cizim', sonuc))
   }, [bayrak, yuklenenCizimAnahtari, symbol, etkinKimlik, cizimDurum.cizimler])
 
   // 6b) Gösterge seçimi değişince kaydet (ADR-5). Kapı ANAHTARIN TAMAMIDIR
@@ -419,7 +420,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     const { depo } = depoAl()
     if (depo === null) return
     const sonuc = gostergeleriKaydet(depo, etkinKimlik, symbol, terminal.gostergeler, Date.now())
-    setGostergeKayitHatasi(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.gostergeKayitHatasi}: ${sonuc.hata ?? ''}`)
+    setGostergeKayitHatasi(kayitHataMetni('gosterge', sonuc))
   }, [bayrak, etkinKimlik, symbol, yuklenenGostergeAnahtari, terminal.gostergeler])
 
   // 7) Çizim durumunu primitive'e ver (o da grafikten yeniden boyama ister).

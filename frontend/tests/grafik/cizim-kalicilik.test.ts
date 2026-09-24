@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   anahtarUret,
   kaydet,
+  kotaHatasiMi,
   yukle,
   sil,
   type Cizim,
@@ -204,4 +205,24 @@ test('KALICILIK: yukle YAN ETKISIZDIR - bozuk kayit depoda oldugu gibi kalir', (
   assert.equal(depo.getItem(anahtar), 'bozuk')
   // Ayni girdi -> ayni cikti (saflik).
   assert.deepEqual(yukle(depo, 'ali', 'AAPL'), ilk)
+})
+
+test('KALICILIK (Y9): kotaHatasiMi tarayici bicimlerini tanir, digerlerini tanimaz', () => {
+  const adli = (ad: string, kod?: number): Error => {
+    const hata = new Error('x') as Error & { code?: number }
+    hata.name = ad
+    if (kod !== undefined) hata.code = kod
+    return hata
+  }
+  assert.equal(kotaHatasiMi(adli('QuotaExceededError')), true) // Chromium, WebKit
+  assert.equal(kotaHatasiMi(adli('NS_ERROR_DOM_QUOTA_REACHED')), true) // eski Firefox
+  assert.equal(kotaHatasiMi(adli('Error', 22)), true) // eski WebKit: yalnizca kod
+  assert.equal(kotaHatasiMi(adli('SecurityError', 18)), false)
+  assert.equal(kotaHatasiMi('QuotaExceededError'), false) // Error olmayan deger
+  assert.equal(kotaHatasiMi(null), false)
+})
+
+test('KALICILIK (Y9): cizim kaydinda kota asimi kotaDoldu ile isaretlenir', () => {
+  const sonuc = kaydet(new KotaDoluDepo(), 'ali', 'AAPL', ORNEK_CIZIMLER)
+  assert.equal(sonuc.kotaDoldu, true)
 })

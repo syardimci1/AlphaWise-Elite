@@ -27,6 +27,7 @@
 // çalışmasını sağlayan tek yoldur; `terminal-durum.test.ts` tablonun tamamını
 // yasaklı kalıp listesinden geçirir.
 
+import type { KaydetSonucu } from './cizim-kalicilik'
 import type { Cizim, CizimTipi, Nokta } from './cizim-model'
 import { GEREKLI_NOKTA_SAYISI, gecerliCizim } from './cizim-model'
 import type { GostergeKimlik } from './gosterge-tanim'
@@ -165,6 +166,7 @@ export const ARAYUZ_METINLERI = {
   // söylüyoruz: kullanıcı çizimlerinin neden görünmediğini bilmeli.
   kimlikHatasi: 'Kullanıcı kimliği okunamadı, çizimler bu oturumda saklanmayacak',
   gostergeKayitHatasi: 'Gösterge seçimi tarayıcı deposuna yazılamadı',
+  kotaDolu: 'tarayıcı deposu dolu. Değişiklik bu sekmede görünmeye devam ediyor ama sayfa yenilenirse kaybolur; yer açmak için başka sembollerdeki eski çizimler silinebilir.',
   kayitliCizimler: 'Kayıtlı çizimler',
   kayitliGostergeler: 'Kayıtlı göstergeler',
 } as const
@@ -348,4 +350,17 @@ export function yuklemeNotu(
   if (cizimUyarisi) parcalar.push(`${ARAYUZ_METINLERI.kayitliCizimler}: ${cizimUyarisi}`)
   if (gostergeUyarisi) parcalar.push(`${ARAYUZ_METINLERI.kayitliGostergeler}: ${gostergeUyarisi}`)
   return parcalar.length === 0 ? null : parcalar.join(' · ')
+}
+
+/**
+ * Kaydetme sonucunun kullanıcıya görünen metni; başarıda boş dizge.
+ *
+ * Y9: kota dolunca teknik hata adı (`QuotaExceededError`) kullanıcıya bir şey
+ * söylemez; ne olduğunu, sonucunu ve ne yapılabileceğini söyleyen metin
+ * gösterilir. Kota dışı hatalarda teknik ayrıntı KORUNUR — tanı için gerekir.
+ */
+export function kayitHataMetni(tur: 'cizim' | 'gosterge', sonuc: KaydetSonucu): string {
+  if (sonuc.basarili) return ''
+  const onek = tur === 'cizim' ? ARAYUZ_METINLERI.kayitHatasi : ARAYUZ_METINLERI.gostergeKayitHatasi
+  return `${onek}: ${sonuc.kotaDoldu === true ? ARAYUZ_METINLERI.kotaDolu : sonuc.hata ?? ''}`
 }

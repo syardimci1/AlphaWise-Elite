@@ -200,6 +200,71 @@ senaryo('E5 (H-1) aynı sekmede kullanıcı değişimi: A-nın verisi B-nin anah
   esit(await basiliListe(s), [], 'B ekranı')
 })
 
+senaryo('E6 (C4) bozuk ve ileri sürüm kayıt: çökme yok, görünür uyarı, sonra onarılır', async (baglam) => {
+  const s = await baglam.newPage()
+  await s.goto(`${KOK}/bos`)
+  await s.evaluate(([g, c]) => {
+    localStorage.setItem(g, '{bozuk json')
+    localStorage.setItem(c, JSON.stringify({ v: 99, cizimler: [] }))
+  }, [GOSTERGE_A, CIZIM_A])
+  await ac(s)
+  const t = await metin(s)
+  if (!t.includes('Kayıtlı göstergeler: bozuk kayit sifirlandi')) throw new Error(`gösterge uyarısı yok: ${t}`)
+  if (!t.includes('Kayıtlı çizimler: bilinmeyen surum (v=99) sifirlandi')) throw new Error(`çizim uyarısı yok: ${t}`)
+  await gostergeTikla(s, 'SMA 50')
+  await bekle(s)
+  esit(JSON.parse((await depo(s))[GOSTERGE_A]).gostergeler, ['sma50'], 'bozuk kaydın üzerine geçerli kayıt')
+})
+
+senaryo('E7 (Y9) GERÇEK kota dolu: çökme yok, anlaşılır uyarı, seçim ekranda kalır', async (baglam) => {
+  const s = await baglam.newPage()
+  await ac(s)
+  // Depoyu gerçek kotaya kadar doldur (tarayıcının kendi QuotaExceededError'u).
+  const dolan = await s.evaluate(() => {
+    const parca = 'x'.repeat(256 * 1024)
+    let i = 0
+    let ad = ''
+    for (;;) {
+      try { localStorage.setItem(`dolgu:${i}`, parca); i += 1 } catch (h) { ad = h.name; break }
+    }
+    for (let boyut = 128 * 1024; boyut >= 1; boyut = Math.floor(boyut / 2)) {
+      try { localStorage.setItem(`dolgu:ince:${boyut}`, 'x'.repeat(boyut)) } catch { /* bir sonraki küçük boyut */ }
+    }
+    return { parca: i, ad }
+  })
+  if (dolan.ad !== 'QuotaExceededError') throw new Error(`tarayıcı hatası beklenmedik: ${dolan.ad}`)
+  await gostergeTikla(s, 'RSI 14')
+  await bekle(s)
+  const uyari = await s.locator('[role="alert"]').innerText()
+  if (!uyari.includes('Gösterge seçimi tarayıcı deposuna yazılamadı: tarayıcı deposu dolu')) throw new Error(`uyarı: ${uyari}`)
+  if (!(await basili(s, 'RSI 14'))) throw new Error('seçim ekrandan düştü')
+  // Yer açılınca bir sonraki kayıt başarılı olur ve uyarı kendiliğinden kalkar.
+  await s.evaluate(() => { for (const a of Object.keys(localStorage)) if (a.startsWith('dolgu:')) localStorage.removeItem(a) })
+  await gostergeTikla(s, 'SMA 20')
+  await bekle(s)
+  if ((await s.locator('[role="alert"]').count()) !== 0) throw new Error('yer açıldıktan sonra uyarı kalkmadı')
+  esit(JSON.parse((await depo(s))[GOSTERGE_A]).gostergeler, ['sma20', 'rsi14'], 'yer açıldıktan sonra kayıt')
+  console.log(`       (kota: ${dolan.parca} × 256 KiB parçada doldu)`)
+})
+
+senaryo('E8 localStorage kapalı (gizli mod benzetimi): terminal çalışır, not görünür', async (baglam) => {
+  await baglam.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() { throw new DOMException('depolama erişimi engellendi', 'SecurityError') },
+    })
+  })
+  const s = await baglam.newPage()
+  await ac(s)
+  const t = await metin(s)
+  if (!t.includes('Çizimler tarayıcı deposuna yazılamadı: depolama erişimi engellendi')) throw new Error(`not yok: ${t}`)
+  await gostergeTikla(s, 'MACD (12, 26, 9)')
+  await yatayCiz(s)
+  await bekle(s)
+  if (!(await basili(s, 'MACD (12, 26, 9)'))) throw new Error('gösterge açılamadı')
+  if (!(await cizimVar(s))) throw new Error('çizim yapılamadı')
+})
+
 // ------------------------------------------------------------------ koş
 const filtre = process.argv[2]
 let kalan = 0
