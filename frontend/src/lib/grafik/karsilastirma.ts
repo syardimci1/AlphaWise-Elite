@@ -145,3 +145,90 @@ export function hizalaVeNormalizeEt(girdiler: readonly GirdiSerisi[]): HizalamaS
 
   return { durum: 'tamam', tabanTarihi, eksen, seriler }
 }
+
+// ---------------------------------------------------------------------------
+// S1 / S6 — seçim: ekleme, çıkarma, mod (C2, C3, C6)
+// ---------------------------------------------------------------------------
+
+/** Grup üst sınırı: ana sembol + 2 ek (C2, ADR-6). */
+export const AZAMI_GRUP = 3
+const EK_YUVALAR: readonly Exclude<Yuva, 0>[] = [1, 2]
+
+export type GorunumModu = 'tek' | 'karsilastirma'
+export type EkSembol = { sembol: string; yuva: Exclude<Yuva, 0> }
+export type KarsilastirmaSecimi = { mod: GorunumModu; semboller: EkSembol[] }
+
+export type EklemeRet = 'gecersiz' | 'ana' | 'yinelenen' | 'dolu'
+export type EklemeSonucu =
+  | { tamam: true; secim: KarsilastirmaSecimi }
+  | { tamam: false; neden: EklemeRet; metin: string }
+
+/**
+ * Arayüzde GÖRÜNEN karşılaştırma metinleri. Y8 testi tablonun tamamını
+ * yasaklı kalıp listesinden geçirir (bkz. terminal-durum.ARAYUZ_METINLERI).
+ */
+export const KARSILASTIRMA_METINLERI = {
+  gorunum: 'Görünüm',
+  tekMod: 'Tek sembol',
+  karsilastirmaMod: 'Karşılaştırma',
+  sembolEtiketi: 'Karşılaştırılacak sembol',
+  ekle: 'Ekle',
+  ekleAria: 'Sembolü karşılaştırmaya ekleme',
+  cikarAria: 'Karşılaştırmadan çıkar',
+  anaSembol: 'ana sembol',
+  gecersiz: 'Sembol biçimi geçersiz (harf/rakam, arada tek nokta ya da tire, en fazla 10 karakter).',
+  ana: 'Bu sembol zaten ana sembol; kendisiyle karşılaştırılamaz.',
+  yinelenen: 'Bu sembol karşılaştırmada zaten var.',
+  dolu: `Karşılaştırmada en fazla ${AZAMI_GRUP} sembol olabilir; yeni sembol için önce birini çıkarın.`,
+  doluNeden: `En fazla ${AZAMI_GRUP} sembol`,
+} as const
+
+/** Aynı desen: servis-proxy.tickerDogrula (sunucu kodu, istemciye alınamaz). Eşdeğerlik testle kilitli. */
+const TICKER_DESENI = /^[A-Z0-9]+(?:[.-][A-Z0-9]+)*$/
+const TICKER_MAKS_UZUNLUK = 10
+
+/** Kırpar, büyük harfe çevirir (yerelden bağımsız), biçimi doğrular; geçersizse null. */
+export function sembolNormalize(ham: string): string | null {
+  const t = (typeof ham === 'string' ? ham : '').trim().toUpperCase()
+  if (t.length === 0 || t.length > TICKER_MAKS_UZUNLUK) return null
+  return TICKER_DESENI.test(t) ? t : null
+}
+
+export function bosSecim(): KarsilastirmaSecimi {
+  return { mod: 'tek', semboller: [] }
+}
+
+/**
+ * Ek sembol ekler. 3 doluysa REDDEDER (en eskiyi çıkarmaz — ADR-6): kullanıcının
+ * seçimi onun haberi olmadan değişmemeli. Yeni sembol en düşük boş yuvayı alır.
+ */
+export function sembolEkle(secim: KarsilastirmaSecimi, anaSembol: string, ham: string): EklemeSonucu {
+  const sembol = sembolNormalize(ham)
+  if (sembol === null) return { tamam: false, neden: 'gecersiz', metin: KARSILASTIRMA_METINLERI.gecersiz }
+  if (sembol === anaSembol.trim().toUpperCase()) {
+    return { tamam: false, neden: 'ana', metin: KARSILASTIRMA_METINLERI.ana }
+  }
+  if (secim.semboller.some((s) => s.sembol === sembol)) {
+    return { tamam: false, neden: 'yinelenen', metin: KARSILASTIRMA_METINLERI.yinelenen }
+  }
+  const dolu = new Set(secim.semboller.map((s) => s.yuva))
+  const yuva = EK_YUVALAR.find((y) => !dolu.has(y))
+  if (yuva === undefined) return { tamam: false, neden: 'dolu', metin: KARSILASTIRMA_METINLERI.dolu }
+  return { tamam: true, secim: { ...secim, semboller: [...secim.semboller, { sembol, yuva }] } }
+}
+
+/** Ek sembolü çıkarır; diğerlerinin yuvası (rengi) DEĞİŞMEZ (C3). Yoksa girdinin kendisi. */
+export function sembolCikar(secim: KarsilastirmaSecimi, sembol: string): KarsilastirmaSecimi {
+  const kalan = secim.semboller.filter((s) => s.sembol !== sembol)
+  return kalan.length === secim.semboller.length ? secim : { ...secim, semboller: kalan }
+}
+
+/** Mod değiştirir; liste KORUNUR (C6). Aynı mod → girdinin kendisi. */
+export function modSec(secim: KarsilastirmaSecimi, mod: GorunumModu): KarsilastirmaSecimi {
+  return secim.mod === mod ? secim : { ...secim, mod }
+}
+
+/** Grup dolu mu (ekleme düğmesi devre dışı + neden). */
+export function grupDolu(secim: KarsilastirmaSecimi): boolean {
+  return secim.semboller.length + 1 >= AZAMI_GRUP
+}
