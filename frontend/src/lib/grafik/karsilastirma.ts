@@ -41,7 +41,8 @@ export type HizaliSeri = {
 }
 
 export type HizalamaSonucu =
-  | { durum: 'tamam'; tabanTarihi: string; eksen: string[]; seriler: HizaliSeri[] }
+  /** `verisiz`: geçerli barı olmadığı için karşılaştırmaya GİREMEYEN semboller (görünür not). */
+  | { durum: 'tamam'; tabanTarihi: string; eksen: string[]; seriler: HizaliSeri[]; verisiz: string[] }
   /** Geçerli verisi olan seri sayısı < 2: karşılaştırma anlamsız, tek seri gösterimine düşülür. */
   | { durum: 'yetersiz'; verisiz: string[] }
   /** Tarih aralıkları kesişmiyor: ortak bir %0 günü yok. */
@@ -143,7 +144,7 @@ export function hizalaVeNormalizeEt(girdiler: readonly GirdiSerisi[]): HizalamaS
     }
   })
 
-  return { durum: 'tamam', tabanTarihi, eksen, seriler }
+  return { durum: 'tamam', tabanTarihi, eksen, seriler, verisiz }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +182,15 @@ export const KARSILASTIRMA_METINLERI = {
   yinelenen: 'Bu sembol karşılaştırmada zaten var.',
   dolu: `Karşılaştırmada en fazla ${AZAMI_GRUP} sembol olabilir; yeni sembol için önce birini çıkarın.`,
   doluNeden: `En fazla ${AZAMI_GRUP} sembol`,
+  lejant: 'Karşılaştırma lejantı',
+  veriYok: 'veri yok',
+  veriHatasi: 'fiyat verisi okunamadı',
+  yukleniyor: 'Karşılaştırma verisi okunuyor…',
+  tekSeri: 'Karşılaştırma için en az bir sembol daha eklenmeli; şimdilik tek seri gösteriliyor.',
+  yetersiz: 'Karşılaştırılacak ikinci bir seri için veri yok',
+  ortakGunYok: 'Sembollerin tarih aralıkları kesişmiyor; ortak bir başlangıç (%0) günü olmadığı için tek seri gösteriliyor.',
+  verisizDisarida: 'Verisi olmadığı için karşılaştırmaya girmeyen semboller',
+  gizliDenetimler: 'Çizimler, göstergeler ve zaman dilimi tek sembol görünümünde; karşılaştırmadan dönünce aynen duruyor.',
 } as const
 
 /** Aynı desen: servis-proxy.tickerDogrula (sunucu kodu, istemciye alınamaz). Eşdeğerlik testle kilitli. */
@@ -231,4 +241,149 @@ export function modSec(secim: KarsilastirmaSecimi, mod: GorunumModu): Karsilasti
 /** Grup dolu mu (ekleme düğmesi devre dışı + neden). */
 export function grupDolu(secim: KarsilastirmaSecimi): boolean {
   return secim.semboller.length + 1 >= AZAMI_GRUP
+}
+
+// ---------------------------------------------------------------------------
+// S3 / S4 — çizgi verisi, renk, lejant (C3, C4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Yuvaya bağlı sabit palet. Koyu yüzeyde (#0f172a) tüm çiftler doğrulandı:
+ * CVD ΔE ≥ 9,4, normal görüş ΔE ≥ 20,9, kontrast ≥ 3:1
+ * (kanit/karsilastirma/palet_dogrulama.txt).
+ */
+export const SERI_RENKLERI: Readonly<Record<Yuva, string>> = { 0: '#3987e5', 1: '#d95926', 2: '#199e70' }
+
+/** Köprü segmentinin rengi. */
+export const SAYDAM = 'rgba(0, 0, 0, 0)'
+
+/** lightweight-charts LineData | WhitespaceData ile yapısal olarak uyumlu nokta. */
+export type CizgiNoktasi = { time: string; value?: number; color?: string }
+
+/**
+ * Hizalı değerleri çizgi serisi verisine çevirir (C4).
+ *
+ * ÖLÇÜLEN KÜTÜPHANE DAVRANIŞI (FAZ 1 §2.1): 5.2.1 çizgi serisi whitespace'i
+ * KÖPRÜLER; i. noktanın `color`'u i→i+1 segmentini boyar. Bu yüzden eksik
+ * gün whitespace olur (eksen hizası) VE boşluktan önceki son noktanın rengi
+ * saydam yapılır — aksi halde boşluk düz bir çizgiyle sessizce enterpole
+ * edilmiş gibi görünürdü. Serinin sonundan sonra köprülenecek segment yoktur;
+ * orada saydamlık yapılmaz (imleç işareti görünür kalsın).
+ */
+export function cizgiVerisi(eksen: readonly string[], degerler: readonly (number | null)[]): CizgiNoktasi[] {
+  const sonDoluIndeks = degerler.reduce<number>((son, d, i) => (d === null ? son : i), -1)
+  return eksen.map((time, i) => {
+    const deger = degerler[i]
+    if (deger === null || deger === undefined) return { time }
+    const nokta: CizgiNoktasi = { time, value: deger }
+    if (i < sonDoluIndeks && degerler[i + 1] === null) nokta.color = SAYDAM
+    return nokta
+  })
+}
+
+/** "+%12,35" / "-%3,10" / "%0,00" — Türkçe ondalık; yuvarlanınca sıfırsa işaretsiz. */
+export function yuzdeMetni(deger: number): string {
+  const mutlak = Math.abs(deger).toFixed(2)
+  if (mutlak === '0.00') return '%0,00'
+  return `${deger > 0 ? '+' : '-'}%${mutlak.replace('.', ',')}`
+}
+
+export type LejantSatiri = {
+  sembol: string
+  renk: string
+  anaMi: boolean
+  /** Gösterilen tarihteki yüzde ya da "veri yok". */
+  degerMetni: string
+  /** Değerin ait olduğu tarih (imleç tarihi ya da serinin son dolu günü). */
+  tarih: string
+  notlar: string[]
+}
+
+const GOSTERILEN_TARIH_SAYISI = 3
+
+function tarihOzeti(tarihler: readonly string[]): string {
+  const ilkler = tarihler.slice(0, GOSTERILEN_TARIH_SAYISI).join(', ')
+  return tarihler.length > GOSTERILEN_TARIH_SAYISI ? `${ilkler} …` : ilkler
+}
+
+/**
+ * Her zaman görünür lejant satırları (C3). İmleç yoksa her seri kendi SON
+ * dolu gününü gösterir; imleç varsa o günü — değer yoksa "veri yok" (C4).
+ * Notlar kayıpları SAYIYLA söyler: sessiz kayıp da belirsiz kayıp da yok.
+ */
+export function lejantSatirlari(
+  sonuc: Extract<HizalamaSonucu, { durum: 'tamam' }>,
+  imlecTarihi: string | null,
+): LejantSatiri[] {
+  const imlecIndeksi = imlecTarihi === null ? -1 : sonuc.eksen.indexOf(imlecTarihi)
+  const eksenSonu = sonuc.eksen[sonuc.eksen.length - 1]
+  return sonuc.seriler.map((seri) => {
+    let indeks = imlecIndeksi
+    if (indeks < 0) {
+      indeks = seri.degerler.reduce<number>((son, d, i) => (d === null ? son : i), 0)
+    }
+    const deger = seri.degerler[indeks]
+    const notlar: string[] = []
+    const eksik = seri.eksikTarihler.length
+    if (eksik > 0) notlar.push(`${eksik} gün veri yok (${tarihOzeti(seri.eksikTarihler)})`)
+    if (seri.sonTarih < eksenSonu) notlar.push(`son veri: ${seri.sonTarih}`)
+    if (seri.tabanOncesi > 0) {
+      notlar.push(`${seri.tabanOncesi} bar ortak başlangıç öncesinde kaldığı için grafikte yok`)
+    }
+    if (seri.gecersizKapanis > 0) notlar.push(`${seri.gecersizKapanis} kapanış geçersiz olduğu için yok sayıldı`)
+    const sicrama = seri.buyukSicramaTarihleri.length
+    if (sicrama > 0) {
+      notlar.push(
+        `${sicrama} günde tek günlük değişim %${BUYUK_SICRAMA_ESIGI * 100}'ı aşıyor, bölünme ya da veri hatası olabilir (${tarihOzeti(seri.buyukSicramaTarihleri)})`,
+      )
+    }
+    return {
+      sembol: seri.sembol,
+      renk: SERI_RENKLERI[seri.yuva],
+      anaMi: seri.yuva === 0,
+      degerMetni: deger === null || deger === undefined ? KARSILASTIRMA_METINLERI.veriYok : yuzdeMetni(deger),
+      tarih: sonuc.eksen[indeks],
+      notlar,
+    }
+  })
+}
+
+/** Ortak taban notu (C1): tarih, girdi türü ve düzeltme belirsizliği açıkça yazılır. */
+export function tabanNotu(tabanTarihi: string): string {
+  return `Başlangıç (%0): ${tabanTarihi} · günlük kapanış fiyatları · temettü/bölünme düzeltmesi kaynağa göre değişebilir, doğrulanmadı`
+}
+
+/** Tek bir ek sembolün verisi çekilemediğinde görünen metin. */
+export function sembolHataMetni(sembol: string, hata: string): string {
+  return `${sembol}: ${KARSILASTIRMA_METINLERI.veriHatasi} (${hata})`
+}
+
+// ---------------------------------------------------------------------------
+// S6 — hangi grafik görünür? (C6, FAZ 4 "tek sembol")
+// ---------------------------------------------------------------------------
+
+export type GorunumKarari = { grafik: 'mum' | 'karsilastirma'; not: string | null }
+
+/**
+ * Karşılaştırma yalnızca en az iki serinin ortak bir %0 günü varsa çizilir.
+ * Aksi her durumda MUM grafiğine (tek seri) düşülür ve nedeni yazılır —
+ * tek çizgilik bir "karşılaştırma" ya da boş bir grafik gösterilmez.
+ */
+export function gorunumKarari(
+  secim: KarsilastirmaSecimi,
+  hizalama: HizalamaSonucu | null,
+  yukleniyor: boolean,
+): GorunumKarari {
+  if (secim.mod === 'tek') return { grafik: 'mum', not: null }
+  if (secim.semboller.length === 0) return { grafik: 'mum', not: KARSILASTIRMA_METINLERI.tekSeri }
+  if (yukleniyor || hizalama === null) return { grafik: 'mum', not: KARSILASTIRMA_METINLERI.yukleniyor }
+  if (hizalama.durum === 'yetersiz') {
+    const kimler = hizalama.verisiz.length > 0 ? ` (${hizalama.verisiz.join(', ')})` : ''
+    return { grafik: 'mum', not: `${KARSILASTIRMA_METINLERI.yetersiz}${kimler}; tek seri gösteriliyor.` }
+  }
+  if (hizalama.durum === 'ortak-gun-yok') return { grafik: 'mum', not: KARSILASTIRMA_METINLERI.ortakGunYok }
+  if (hizalama.verisiz.length > 0) {
+    return { grafik: 'karsilastirma', not: `${KARSILASTIRMA_METINLERI.verisizDisarida}: ${hizalama.verisiz.join(', ')}` }
+  }
+  return { grafik: 'karsilastirma', not: null }
 }
