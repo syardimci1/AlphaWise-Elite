@@ -1,0 +1,13 @@
+ÖLDÜ   M1 köprü segmenti saydam yapılmıyor (Y9 görsel enterpolasyon)  [# fail 1 ]
+ÖLDÜ   M2 her seri KENDİ ilk gününe göre %0 (ortak taban yok)  [# fail 1 ]
+ÖLDÜ   M3 eksik gün son bilinen değerle taşınıyor (LOCF)  [# fail 6 ]
+ÖLDÜ   M4 4. sembolde en eski otomatik çıkarılıyor  [# fail 1 ]
+ÖLDÜ   M5 yinelenen sembol denetimi kaldırıldı  [# fail 1 ]
+ÖLDÜ   M6 renk sıraya bağlı (çıkarınca yuvalar yeniden numaralanıyor)  [# fail 1 ]
+ÖLDÜ   M7 kalıcılık anahtarı kimliği yok sayıyor (hesaplar arası sızıntı)  [# fail 2 ]
+ÖLDÜ   M8 sıfırlama karşılaştırma kaydını silmiyor  [# fail 1 ]
+ÖLDÜ   M9 H-6 kapısı geri alındı (yok edilmiş grafikte removeSeries)  [KALDI  K6 (C6) mod gidiş-dönüşü: mum grafiği (yakınlaştırma, çizim, gösterge) PİKSELİ PİKSELİNE aynı ]
+ÖLDÜ   M10 karşılaştırma modunda Delete koruması kaldırıldı  [KALDI  K10 (C6) karşılaştırma modunda Delete/Backspace görünmeyen çizimi SİLMEZ ]
+ÖLDÜ   M11 mum grafiği gizlenmek yerine kaldırılıyor (C6 görünüm kaybı)  [KALDI  K6 (C6) mod gidiş-dönüşü: mum grafiği (yakınlaştırma, çizim, gösterge) PİKSELİ PİKSELİNE aynı ]
+
+SONUÇ: tüm mutasyonlar öldü
