@@ -1,0 +1,4 @@
+{"kip":"atlanmis","x":373,"once_09_10":3,"kopru_10_11":3,"eksikGun_11":3,"kopru_11_12":3,"sonra_12_13":3}
+{"kip":"whitespace","x":373,"once_09_10":3,"kopru_10_11":3,"eksikGun_11":3,"kopru_11_12":3,"sonra_12_13":3}
+{"kip":"renk-onceki","x":373,"once_09_10":3,"kopru_10_11":0,"eksikGun_11":0,"kopru_11_12":0,"sonra_12_13":3}
+{"kip":"renk-sonraki","x":373,"once_09_10":3,"kopru_10_11":3,"eksikGun_11":3,"kopru_11_12":3,"sonra_12_13":0}

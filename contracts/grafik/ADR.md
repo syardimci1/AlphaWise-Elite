@@ -132,3 +132,55 @@ mantığı gerekir) · C) `storage` olayında **görünür uyarı**. **Karar: C*
 - Kalıcılık özelliğe ait ayrı bir bayrak EKLENMEDİ: terminal bayrağı kapalıyken bileşen hiçbir depo
   erişimi yapmaz; kaydı olmayan kullanıcı için varsayılan görünüm (boş gösterge, günlük dilim) değişmedi;
   "Kayıtlı ayarları sıfırla" kalıcılık öncesi hale dönüşü sağlar.
+
+---
+
+## ADR-6 — Karşılaştırma modu: sabit ortak taban, saydam segmentle boşluk, reddeden limit
+
+**Tarih:** 25.09.2026 · Sözleşme: `contracts/grafik/karsilastirma_modu.md` · Keşif: `kanit/karsilastirma/faz1_kesif.md`
+
+**Bağlam.** Terminal tek sembollü. 2–3 sembolü yüzde-normalize tek grafikte göstermek isteniyor; semboller farklı
+tarihlerde başlayabilir, aralarında eksik gün olabilir (merkezi depo bozuk barları satır olarak düşürüyor — FAZ 1 §3.1).
+
+**Seçenekler — normalize yöntemi.**
+| # | Seçenek | Sorun |
+|---|---|---|
+| A | Kütüphanenin `PriceScaleMode.Percentage` modu | Taban "ilk **görünür** değer": kullanıcı kaydırınca taban ve tüm yüzdeler değişir; iki ekran görüntüsü aynı günü farklı yüzdeyle gösterir |
+| B | Her seri **kendi** ilk gününe göre %0 | Farklı başlangıçlı serilerde "%+80 vs %+20" iki farklı dönemin getirisidir ama aynı eksende yan yana durur — yanıltıcı |
+| C | **Ortak taban günü** (tüm serilerde geçerli kapanış olan ilk gün), taban öncesi dışarıda ve sayısı raporlanır | taban öncesi veri görünmez (ama sayısı ve aralığı yazılır) |
+
+**Karar: C.** C1'in "tüm seriler aynı başlangıç noktasından başlar" şartını kelimenin tam anlamıyla ancak C sağlar:
+taban **aynı gündür**. B'deki "aynı nokta ama farklı gün" en yaygın yanıltıcı karşılaştırma biçimidir (Y3).
+
+**Seçenekler — boşluk (Y9).**
+| # | Seçenek | Sorun |
+|---|---|---|
+| A | Whitespace ver, kütüphane boşluk bıraksın | **Ölçüldü, çalışmıyor:** 5.2.1 çizgi serisi whitespace'i köprüler (FAZ 1 §2.1) → görsel doğrusal enterpolasyon |
+| B | Son bilinen değeri taşı (LOCF), etiketle | Taşınan gün "%0 günlük değişim" gibi yatay bir çizgi üretir; o gün gerçekleşmiş bir getiri uydurulmuş olur. Etiket yalnızca imleçte görünür, çizginin kendisi yanıltır |
+| C | Seriyi bitişik parçalara böl, parça başına ayrı seri | Doğru ama bozuk barı çok olan sembolde onlarca seri; lejant/eksen etiketi parça sayısı kadar çoğalır |
+| D | **Boşluktan önceki son noktanın segment rengi saydam** + whitespace ile eksen hizası | tek günlük "ada" çizgi olarak görünmez (imleçte okunur, sayılır) |
+
+**Karar: D.** Mekanizma gerçek Chromium'da piksel sayımıyla ölçüldü (köprü sütunlarında 3 → 0 piksel, komşu segmentler
+etkilenmedi). Boşluk **sessiz de değildir**: lejantta sembol başına sayı + ilk tarihler, imleçte "veri yok".
+Hiçbir seride barı olmayan gün eksende yoktur (takvim olmadan "eksik" denemez) — sınır olarak yazıldı.
+
+**Seçenekler — sembol limiti (C2).** A) 4. eklenince en eskiyi otomatik çıkar · B) **reddet + görünür neden**.
+**Karar: B.** A kullanıcının seçimini onun haberi olmadan değiştirir ve bu değişiklik kalıcı depoya yazılır; geri
+dönüşü yoktur. B muhafazakârdır: hiçbir şey kaybolmaz, kullanıcı hangisini çıkaracağına kendisi karar verir.
+Limit 3'te tutuldu: 3 renk tüm-çiftler CVD doğrulamasından geçen en büyük küme (palet referansı: "the first three
+slots validate all-pairs"; 4. yuva sarı-turuncu çiftini getirir ve tüm-çiftler eşiğinde kalır). D3 tetiklenmedi.
+
+**Seçenekler — görünüm.** A) Mevcut mum grafiğine çizgi serileri ekle · B) **Ayrı grafik; mum grafiği gizlenir, kaldırılmaz**.
+**Karar: B.** Çizimler fiyat birimindedir, göstergeler fiyat serisinden hesaplanır; yüzde eksende ikisi de anlamsız
+ve A'da ya yanlış yerde çizilir ya da silinmek zorunda kalırdı. B'de tek-sembol grafiği DOM'da kalır: görünüm,
+çizimler, göstergeler, geri al yığını geçişte kaybolmaz (C6).
+
+**Dilim.** Karşılaştırma yalnızca günlük. Haftalık/aylık kova tarihi kovadaki ilk barın tarihidir
+(`zaman-dilimi.ts:208`); bir sembol pazartesiyi kaçırırsa kovaları diğerinden farklı tarihe düşer ve hizalama bozulur.
+
+**Kalıcılık.** ADR-5'in üçüncü türü; yeni mekanizma yok (`adAlaniAnahtari`, `GecikmeliKayit`, H-1 kapısı, H-5 yankı kapısı,
+sıfırlama, sekme uyarısı). Ad alanı **ana sembol**dür: "AAPL grubunun karşılaştırmaları" AAPL'ye aittir.
+
+**Sonuçlar.**
+- Hizalama + normalize + lejant metinleri saf modülde (`karsilastirma.ts`), bileşen yalnızca uygular.
+- Yeni bağımlılık yok, yeni API ucu yok; ek semboller mevcut `/api/market-data/{t}` ile paralel çekilir.
