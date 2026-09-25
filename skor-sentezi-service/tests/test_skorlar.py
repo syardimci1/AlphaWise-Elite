@@ -513,3 +513,25 @@ def test_dcf_varsayim_metni_terminal_buyumeyi_anar():
     metin = o.ayrinti["varsayim"]
     assert "surekli buyume" in metin
     assert "0.025" in metin
+
+
+def test_dcf_varsayim_metni_risksiz_faizin_kaynagini_ve_penceresini_bildirir():
+    """Iskonto oraninin risksiz faiz girdisi hangi ENSTRUMANDAN, hangi OLCUM
+    PENCERESIYLE alindigini kendisi soylemelidir.
+
+    veri.py -> skorlar.py yonunde DAIRESEL IMPORT vardir (veri.py:22), bu
+    yuzden skorlar.py sabiti ice aktaramaz ve sembol metne ELLE yazilir.
+    Metin ile sabitin ayrisamamasini saglayan tek sey bu testtir: sabit
+    degisip metin guncellenmezse de, metinden sembol dusurulurse de kirilir.
+    Import testin ICINDE yapilir ki veri.py'nin ileride edinebilecegi agir
+    bir bagimlilik bu dosyanin tamamini toplanamaz hale getirmesin."""
+    from src.veri import RISKSIZ_FAIZ_SEMBOLU
+
+    o = dcf_icsel_fiyat_orani(dcf_sirketi(), risksiz_faiz=0.04)
+    metin = o.ayrinti["varsayim"]
+    # (a) ENSTRUMAN: yayimlanan metin ile kodun cektigi sembol ayni olmali
+    assert RISKSIZ_FAIZ_SEMBOLU in metin, (
+        f"varsayim metni {RISKSIZ_FAIZ_SEMBOLU} sembolunu anmiyor: {metin}")
+    # (b) OLCUM PENCERESI: son kapanis; ortalama/duzlestirme YOK
+    assert "son kapanis" in metin
+    assert "ortalama" in metin and "duzlestirme" in metin

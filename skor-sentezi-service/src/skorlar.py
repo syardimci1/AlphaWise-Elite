@@ -407,7 +407,12 @@ def dcf_icsel_fiyat_orani(sirket: Sirket, risksiz_faiz: Optional[float] = None,
                             "buyume gecmis serbest nakit akisindan turetilip "
                             "[-%5, +%15] araligina kirpildi; "
                             f"terminal deger {tahmin_yili} yillik acik tahminden "
-                            f"sonra surekli buyume ({surekli_buyume}) ile hesaplandi")
+                            f"sonra surekli buyume ({surekli_buyume}) ile hesaplandi; "
+                            # Sembol ELLE yazilir: veri.py skorlar.py'yi ice
+                            # aktardigi icin ters yonde import kurulamaz.
+                            # Sabitle tutarliligi test_skorlar.py saglar.
+                            "risksiz faiz girdisi ^TNX (ABD 10 yillik tahvil) "
+                            "son kapanisidir; ortalama/duzlestirme uygulanmaz")
 
 
 # ------------------------------------------------------- TEMETTU DAYANIKLILIGI
