@@ -12,7 +12,7 @@ import { gostergeAnahtari, gostergeleriKaydet } from '../../src/lib/grafik/goste
 import { kayitlariSifirla } from '../../src/lib/grafik/kalicilik-sifirlama'
 import { GecikmeliKayit, type Zamanlayici } from '../../src/lib/grafik/gecikmeli-kayit'
 import type { KarsilastirmaSecimi } from '../../src/lib/grafik/karsilastirma'
-import { ARAYUZ_METINLERI } from '../../src/lib/grafik/terminal-durum'
+import { ARAYUZ_METINLERI, kayitHataMetni } from '../../src/lib/grafik/terminal-durum'
 
 class BellekDepo implements Depo {
   readonly kutu = new Map<string, string>()
@@ -172,4 +172,12 @@ test('SIFIRLAMA (C6 kalıcılık + C5): "Kayıtlı ayarları sıfırla" karşıl
 test('SIFIRLAMA metni: kullanıcı karşılaştırma seçiminin de silineceğini ONAYDAN ÖNCE görür', () => {
   assert.match(ARAYUZ_METINLERI.sifirlaOnay, /karşılaştırma/)
   assert.match(ARAYUZ_METINLERI.sifirlaAria, /karşılaştırma/)
+})
+
+test('kayitHataMetni (Y9): karşılaştırma kaydı için kendi öneki; kota dolunca anlaşılır metin', () => {
+  assert.equal(kayitHataMetni('karsilastirma', { basarili: true }), '')
+  const kota = kayitHataMetni('karsilastirma', { basarili: false, kotaDoldu: true, hata: 'QuotaExceededError: x' })
+  assert.ok(kota.startsWith(ARAYUZ_METINLERI.karsilastirmaKayitHatasi))
+  assert.ok(kota.includes(ARAYUZ_METINLERI.kotaDolu))
+  assert.equal(kota.includes('QuotaExceededError'), false)
 })

@@ -166,6 +166,8 @@ export const ARAYUZ_METINLERI = {
   // söylüyoruz: kullanıcı çizimlerinin neden görünmediğini bilmeli.
   kimlikHatasi: 'Kullanıcı kimliği okunamadı, çizimler bu oturumda saklanmayacak',
   gostergeKayitHatasi: 'Gösterge seçimi tarayıcı deposuna yazılamadı',
+  karsilastirmaKayitHatasi: 'Karşılaştırma seçimi tarayıcı deposuna yazılamadı',
+  kayitliKarsilastirma: 'Kayıtlı karşılaştırma',
   kotaDolu: 'tarayıcı deposu dolu. Değişiklik bu sekmede görünmeye devam ediyor ama sayfa yenilenirse kaybolur; yer açmak için başka sembollerdeki eski çizimler silinebilir.',
   kayitliCizimler: 'Kayıtlı çizimler',
   kayitliGostergeler: 'Kayıtlı göstergeler',
@@ -365,8 +367,13 @@ export function yuklemeNotu(
  * söylemez; ne olduğunu, sonucunu ve ne yapılabileceğini söyleyen metin
  * gösterilir. Kota dışı hatalarda teknik ayrıntı KORUNUR — tanı için gerekir.
  */
-export function kayitHataMetni(tur: 'cizim' | 'gosterge', sonuc: KaydetSonucu): string {
+export function kayitHataMetni(tur: 'cizim' | 'gosterge' | 'karsilastirma', sonuc: KaydetSonucu): string {
   if (sonuc.basarili) return ''
-  const onek = tur === 'cizim' ? ARAYUZ_METINLERI.kayitHatasi : ARAYUZ_METINLERI.gostergeKayitHatasi
+  const onek =
+    tur === 'cizim'
+      ? ARAYUZ_METINLERI.kayitHatasi
+      : tur === 'gosterge'
+        ? ARAYUZ_METINLERI.gostergeKayitHatasi
+        : ARAYUZ_METINLERI.karsilastirmaKayitHatasi
   return `${onek}: ${sonuc.kotaDoldu === true ? ARAYUZ_METINLERI.kotaDolu : sonuc.hata ?? ''}`
 }
