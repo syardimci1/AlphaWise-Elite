@@ -34,3 +34,29 @@ Yalnızca ekleme yapılır; mevcut girdiler silinmez.
 - **Kök neden:** iki doğrulama katmanı farklı sözleşmelerle çalışıyordu: `yukle` öğe bazlı, `YUKLE` liste bazlı (benzersizlik dahil).
 - **Düzeltme:** `cizimleriAyikla` yinelenen kimlikleri ayıklar (ilk gelen kalır), sayısı uyarıya yazılır. Test: "yukle çıktısı
   reducer YUKLE tarafından HER ZAMAN kabul edilir".
+
+## H-7 — "whitespace = boşluk" varsayımı yanlıştı: çizgi serisi eksik günü köprülüyor (25.09.2026, karşılaştırma FAZ 1)
+
+- **Belirti:** eksik gün whitespace (`{ time }`) olarak verildiğinde bile lightweight-charts 5.2.1 çizgi serisi komşu iki
+  gerçek noktayı düz çizgiyle birleştiriyor — eksik gün **görsel olarak doğrusal enterpole edilmiş** gibi görünüyor (Y9 ihlali).
+- **Ölçüm:** `kanit/karsilastirma/e2e/bosluk_sondasi.mjs` (piksel sayımı): atlanmış ve whitespace kiplerinde eksik gün sütununda
+  3 çizgi pikseli; boşluk öncesi son noktanın `color`'u saydam yapılınca 0. Çıktı `kanit/karsilastirma/faz1_bosluk_sondasi_cikti.txt`.
+- **5 Neden:** (1) boşluk görünmezdi ← (2) whitespace verisi çizgiyi kesmiyor ← (3) kütüphane whitespace'i yalnızca zaman
+  ölçeği noktası olarak kullanıyor, segment çizimini etkilemiyor ← (4) belgelenmiş davranış sanıldı, ölçülmedi ← (5) görsel bir
+  sözleşme (C4) yalnızca veri düzeyinde (null) test edilecekti; birim testi bunu asla yakalayamazdı.
+- **Düzeltme:** `cizgiVerisi` boşluktan önceki son noktayı `SAYDAM` yapar (ölçülen mekanizma: i. nokta i→i+1 segmentini boyar);
+  birim testi (`karsilastirma-cizim.test.ts`) + gerçek bileşende piksel testi (e2e **K5**: eksik gün sütunu 0, pozitif kontrol 5 piksel).
+- **Ders:** görsel bir iddia ("boşluk görünür") piksel ölçümüyle kanıtlanır; veri yapısının doğru olması ekranın doğru olduğunu göstermez.
+
+## H-6 — karşılaştırma grafiği kaldırılırken tüm terminal çöküyordu (25.09.2026, karşılaştırma S3)
+
+- **Belirti:** üç sembol eklenince `Error: Value is undefined` → React ağacı çöktü, terminal bölümü tamamen kayboldu (e2e K2/K3/K6/K7/K8/K11/K13/K15 kırmızı).
+- **Ölçüm:** TANI kipi (geliştirme paketi + yığın izi): `ensureDefined ← ChartApi.removeSeries ← commitHookPassiveUnmountEffects`.
+- **5 Neden:** (1) yok edilmiş grafikte `removeSeries` çağrıldı ← (2) bileşen kaldırılırken React temizlikleri bildirim sırasıyla
+  çalıştırır: önce kurulum efektinin `grafik.remove()`'u, sonra seri efektinin temizliği ← (3) seri temizliği grafiğin hâlâ canlı
+  olduğunu varsaydı ← (4) bileşen yalnızca yeniden çizimde (seri değişimi) sınanmıştı, kaldırılmada değil ← (5) ikinci sembol
+  yüklenirken "yükleniyor" durumu karşılaştırma grafiğini söküp mum grafiğine düşürüyordu — kaldırma, beklenenden çok daha sık bir olaydı.
+- **Düzeltme:** seri temizliği `grafikRef.current !== grafik` ise hiçbir şey yapmaz (grafik zaten serileriyle birlikte yok edildi).
+  Ek olarak: hazır bir ek sembol varken yeni sembolün yüklenmesi karşılaştırmayı SÖKMEZ (titreme yok), yüklenen sembol notta söylenir.
+- **Ders:** grafik kütüphanesi nesnesi paylaşan birden çok efektte temizlik sırası sözleşmenin parçasıdır; kaldırma yolu ayrıca sınanmalı
+  (K6 artık mod gidiş-dönüşünü, K8 art arda ekle/çıkar yolunu kapsıyor).

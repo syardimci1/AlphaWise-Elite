@@ -24,7 +24,7 @@
 // `terminal-durum.ARAYUZ_METINLERI`'nden okunur ve orada yasaklı kalıp
 // listesiyle test edilir. Metni buraya gömmek kapıyı atlamak olurdu.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import { CandlestickSeries, ColorType, createChart } from 'lightweight-charts'
 import type { CandlestickData, IChartApi, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
 import { utcMsToIsGunuString, gunStringindenUtcMs } from '@/lib/koyfin-zaman'
@@ -40,6 +40,21 @@ import { anahtarUret, kaydet, yukle } from '@/lib/grafik/cizim-kalicilik'
 import { gostergeAnahtari, gostergeleriKaydet, gostergeleriYukle } from '@/lib/grafik/gosterge-kalicilik'
 import { GecikmeliKayit } from '@/lib/grafik/gecikmeli-kayit'
 import { baskaSekmeDegistirdi, kayitlariSifirla } from '@/lib/grafik/kalicilik-sifirlama'
+import type { GirdiSerisi, GorunumModu, KarsilastirmaSecimi } from '@/lib/grafik/karsilastirma'
+import {
+  KARSILASTIRMA_METINLERI,
+  SERI_RENKLERI,
+  bosSecim,
+  gorunumKarari,
+  grupDolu,
+  hizalaVeNormalizeEt,
+  modSec,
+  sembolCikar,
+  sembolEkle,
+  sembolHataMetni,
+} from '@/lib/grafik/karsilastirma'
+import { karsilastirmaAnahtari, karsilastirmaKaydet, karsilastirmaYukle } from '@/lib/grafik/karsilastirma-kalicilik'
+import KarsilastirmaGrafigi from './KarsilastirmaGrafigi'
 import type { Bar } from '@/lib/grafik/zaman-dilimi'
 import { hamBarlariCevir, resample } from '@/lib/grafik/zaman-dilimi'
 import type { CizimKimligi, TerminalDurum, TerminalEylem } from '@/lib/grafik/terminal-durum'
@@ -97,6 +112,18 @@ const CIZIM_STILI = { renk: RENK.vurgu, kalinlik: 2 }
  */
 const BAR_LIMITI = 1500
 const GRAFIK_YUKSEKLIGI = 420
+
+/** Karşılaştırma grafiğinin renkleri; terminalle aynı yüzey (palet bu zemine göre doğrulandı). */
+const KARSILASTIRMA_RENGI = {
+  metin: RENK.metin,
+  ikincil: RENK.ikincil,
+  soluk: RENK.soluk,
+  cizgi: RENK.cizgi,
+  zemin: '#0f172a',
+}
+
+/** Ek sembolün çekilmiş verisi (C6: oturum boyunca önbellek, geçişte yeniden istek yok). */
+type EkVeri = { durum: 'yukleniyor' } | { durum: 'hazir'; barlar: Bar[]; atlanan: number } | { durum: 'hata'; hata: string }
 
 function hataMetni(hata: unknown): string {
   return hata instanceof Error ? hata.message : String(hata)
@@ -175,6 +202,18 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
    */
   const depodakiRef = useRef(new Map<string, string>())
   const [baskaSekmeNotu, setBaskaSekmeNotu] = useState('')
+
+  // KARŞILAŞTIRMA MODU (contracts/grafik/karsilastirma_modu.md). Karar mantığı
+  // saf `karsilastirma.ts`'de; burada yalnızca durum, ağ ve kalıcılık bağlantısı.
+  const [secim, setSecim] = useState<KarsilastirmaSecimi>(bosSecim)
+  /** Seçimin YÜKLENDİĞİ anahtar — H-1 kapısı: kaydetme yalnızca bu ad alanı yüklendikten sonra. */
+  const [yuklenenKarsilastirmaAnahtari, setYuklenenKarsilastirmaAnahtari] = useState<string | null>(null)
+  const [karsilastirmaKayitHatasi, setKarsilastirmaKayitHatasi] = useState('')
+  const [ekVeri, setEkVeri] = useState<ReadonlyMap<string, EkVeri>>(() => new Map())
+  const [sembolGirdisi, setSembolGirdisi] = useState('')
+  /** Ekleme/çıkarma sonucu; `role="status"` ile duyurulur (Y11). */
+  const [secimDurumu, setSecimDurumu] = useState('')
+  const sembolGirdiRef = useRef<HTMLInputElement | null>(null)
 
   // NEDEN useReducer DEĞİL useState: tıklama akışında durumu üreten
   // `tiklamaSonucu` ZATEN tam bir `TerminalDurum` döndürür. useReducer ile
@@ -295,6 +334,79 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
   // hesaplanır — böylece etiket ile grafiğe basılan veri AYNI sonuçtan gelir.
   const dilimSonucu = useMemo(() => resample(barlar, terminal.dilim), [barlar, terminal.dilim])
 
+  // Ana sembol grubun yuva-0'ıdır. Bir ek sembol ana sembole eşitse (sayfa
+  // sembol değiştirdi, depo kapalı olduğu için liste taşındı) çizimden düşer:
+  // bir sembol kendisiyle karşılaştırılmaz.
+  const anaSembol = symbol.trim().toUpperCase()
+  const etkinSecim = useMemo<KarsilastirmaSecimi>(() => {
+    const kalan = secim.semboller.filter((ek) => ek.sembol !== anaSembol)
+    return kalan.length === secim.semboller.length ? secim : { ...secim, semboller: kalan }
+  }, [secim, anaSembol])
+  const karsilastirmaModu = secim.mod === 'karsilastirma'
+
+  // 2b) Ek sembollerin fiyat verisi: yalnızca karşılaştırma modunda, sembol başına
+  //     BİR KEZ (C6 önbellek). Toplu uç yok; mevcut uç sembol başına paralel çağrılır.
+  useEffect(() => {
+    if (bayrak !== 'acik' || !karsilastirmaModu) return
+    const eksikler = etkinSecim.semboller.map((ek) => ek.sembol).filter((ek) => !ekVeri.has(ek))
+    if (eksikler.length === 0) return
+    setEkVeri((onceki) => {
+      const yeni = new Map(onceki)
+      for (const ek of eksikler) yeni.set(ek, { durum: 'yukleniyor' })
+      return yeni
+    })
+    for (const ek of eksikler) {
+      const yaz = (deger: EkVeri): void =>
+        setEkVeri((onceki) => {
+          const yeni = new Map(onceki)
+          yeni.set(ek, deger)
+          return yeni
+        })
+      fetch(`/api/market-data/${encodeURIComponent(ek)}?limit=${BAR_LIMITI}`)
+        .then(async (yanit) => {
+          if (!yanit.ok) throw new Error(`HTTP ${yanit.status}`)
+          const cevrilen = hamBarlariCevir(await yanit.json())
+          yaz({ durum: 'hazir', barlar: cevrilen.barlar, atlanan: cevrilen.atlanan })
+        })
+        .catch((sebep: unknown) => yaz({ durum: 'hata', hata: hataMetni(sebep) }))
+    }
+  }, [bayrak, karsilastirmaModu, etkinSecim, ekVeri])
+
+  const ekYukleniyor = etkinSecim.semboller.some((ek) => {
+    const durum = ekVeri.get(ek.sembol)?.durum
+    return durum !== 'hazir' && durum !== 'hata'
+  })
+  // Hazır ek sembol varken yeni bir sembolün yüklenmesi karşılaştırmayı SÖKMEZ:
+  // hazır olanlarla çizilmeye devam edilir, yüklenen sembol notta söylenir.
+  // (Sökmek mum grafiğine titretip geri dönmek demekti.)
+  const hazirEkVar = etkinSecim.semboller.some((ek) => ekVeri.get(ek.sembol)?.durum === 'hazir')
+  const karsilastirmaBekliyor = yukleniyor || (ekYukleniyor && !hazirEkVar)
+  // Hizalama SAF ve türetilmiştir: lejant ile çizilen çizgiler aynı sonuçtan gelir.
+  // Karşılaştırma GÜNLÜK kapanışlarla yapılır (ADR-6 §dilim): dilimSonucu değil `barlar`.
+  const hizalama = useMemo(() => {
+    if (!karsilastirmaModu || etkinSecim.semboller.length === 0 || karsilastirmaBekliyor) return null
+    const kapanislar = (liste: Bar[]) => liste.map((bar) => ({ tarih: bar.tarih, kapanis: bar.kapanis }))
+    const girdiler: GirdiSerisi[] = [{ sembol: anaSembol, yuva: 0, barlar: kapanislar(barlar) }]
+    for (const ek of etkinSecim.semboller) {
+      const veri = ekVeri.get(ek.sembol)
+      if (veri?.durum === 'hazir') girdiler.push({ sembol: ek.sembol, yuva: ek.yuva, barlar: kapanislar(veri.barlar) })
+    }
+    return hizalaVeNormalizeEt(girdiler)
+  }, [karsilastirmaModu, etkinSecim, karsilastirmaBekliyor, anaSembol, barlar, ekVeri])
+  const gorunum = gorunumKarari(etkinSecim, hizalama, karsilastirmaModu && karsilastirmaBekliyor)
+  const ekNotlari = etkinSecim.semboller.flatMap((ek) => {
+    const veri = ekVeri.get(ek.sembol)
+    if (veri?.durum === 'hata') return [sembolHataMetni(ek.sembol, veri.hata)]
+    if (veri === undefined || veri.durum === 'yukleniyor') {
+      return hazirEkVar ? [`${ek.sembol}: ${KARSILASTIRMA_METINLERI.sembolYukleniyor}`] : []
+    }
+    if (veri?.durum === 'hazir') {
+      const not = veriNotu(veri.atlanan, 0)
+      return not === null ? [] : [`${ek.sembol}: ${not}`]
+    }
+    return []
+  })
+
   // 3) Grafik kurulumu. Yalnızca bayrak açıkken ve bir kez.
   useEffect(() => {
     if (bayrak !== 'acik') return
@@ -319,7 +431,11 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     setGrafikHazir(true)
 
     const boyutlandir = (): void => {
-      if (kutuRef.current !== null) grafik.applyOptions({ width: kutuRef.current.clientWidth })
+      // Karşılaştırma modunda kutu gizlidir (genişlik 0); 0'a küçültmek yerine
+      // atlanır, görünür olunca yeniden ölçülür (aşağıdaki 4c).
+      if (kutuRef.current !== null && kutuRef.current.clientWidth > 0) {
+        grafik.applyOptions({ width: kutuRef.current.clientWidth })
+      }
     }
     window.addEventListener('resize', boyutlandir)
 
@@ -380,6 +496,15 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     grafik.timeScale().fitContent()
   }, [grafikHazir, symbol, terminal.dilim])
 
+  // 4c) Mum grafiği yeniden görünür olunca genişliği ölç (C6). Gizliyken
+  //     yeniden boyutlandırma atlanıyordu; görünüm (yakınlaştırma) korunur.
+  useEffect(() => {
+    if (!grafikHazir || gorunum.grafik !== 'mum') return
+    const grafik = grafikRef.current
+    const kutu = kutuRef.current
+    if (grafik !== null && kutu !== null && kutu.clientWidth > 0) grafik.applyOptions({ width: kutu.clientWidth })
+  }, [grafikHazir, gorunum.grafik])
+
   // 5) Kayıtlı çizimleri yükle. Sembol ya da kullanıcı değişince yeniden.
   useEffect(() => {
     if (bayrak !== 'acik') return
@@ -390,6 +515,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     if (depo === null) {
       setDepoNotu(`${ARAYUZ_METINLERI.kayitHatasi}: ${depoHatasi ?? ''}`)
       setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
+      setYuklenenKarsilastirmaAnahtari(karsilastirmaAnahtari(etkinKimlik, symbol))
       return
     }
     const sonuc = yukle(depo, etkinKimlik, symbol)
@@ -401,7 +527,17 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: gostergeSonucu.gostergeler })
     depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), JSON.stringify(gostergeSonucu.gostergeler))
     setYuklenenGostergeAnahtari(gostergeAnahtari(etkinKimlik, symbol))
-    setDepoNotu(yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari) ?? '')
+    // Karşılaştırma seçimi de aynı ad alanından (C5): ana sembolün grubu.
+    const karsilastirmaSonucu = karsilastirmaYukle(depo, etkinKimlik, symbol)
+    setSecim(karsilastirmaSonucu.secim)
+    depodakiRef.current.set(karsilastirmaAnahtari(etkinKimlik, symbol), JSON.stringify(karsilastirmaSonucu.secim))
+    setYuklenenKarsilastirmaAnahtari(karsilastirmaAnahtari(etkinKimlik, symbol))
+    const karsilastirmaUyarisi = karsilastirmaSonucu.uyari
+      ? `${ARAYUZ_METINLERI.kayitliKarsilastirma}: ${karsilastirmaSonucu.uyari}`
+      : null
+    setDepoNotu(
+      [yuklemeNotu(sonuc.uyari, gostergeSonucu.uyari), karsilastirmaUyarisi].filter((m) => m !== null).join(' · '),
+    )
     setBaskaSekmeNotu('') // yeni ad alanı: önceki sembolün sekme uyarısı geçersiz
     setYuklenenCizimAnahtari(anahtarUret(etkinKimlik, symbol))
   }, [bayrak, symbol, etkinKimlik, terminalGonder])
@@ -456,6 +592,26 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     })
   }, [bayrak, etkinKimlik, symbol, yuklenenGostergeAnahtari, terminal.gostergeler, kayitci])
 
+  // 6b') Karşılaştırma seçimi değişince kaydet (C5) — 6b ile birebir aynı desen:
+  //      kapı anahtarın tamamı (H-1), depodaki içerik aynıysa yazılmaz (H-5).
+  useEffect(() => {
+    if (bayrak !== 'acik' || etkinKimlik === null) return
+    if (yuklenenKarsilastirmaAnahtari !== karsilastirmaAnahtari(etkinKimlik, symbol)) return
+    const { depo } = depoAl()
+    if (depo === null) return
+    const kimlik = etkinKimlik
+    const sembol = symbol
+    const kaydedilecek = secim
+    const anahtar = karsilastirmaAnahtari(kimlik, sembol)
+    const icerik = JSON.stringify(kaydedilecek)
+    if (depodakiRef.current.get(anahtar) === icerik) return
+    depodakiRef.current.set(anahtar, icerik)
+    kayitci.planla(anahtar, () => {
+      const sonuc = karsilastirmaKaydet(depo, kimlik, sembol, kaydedilecek, Date.now())
+      setKarsilastirmaKayitHatasi(kayitHataMetni('karsilastirma', sonuc))
+    })
+  }, [bayrak, etkinKimlik, symbol, yuklenenKarsilastirmaAnahtari, secim, kayitci])
+
   // 6c) Bekleyen yazımları boşalt: sekme kapanırken/gizlenirken ve bileşen
   //     kaldırılırken. Debounce'un veri kaybı penceresini bu kapatır (C5).
   //     `pagehide` mobil tarayıcılarda güvenilmez; `visibilitychange→hidden`
@@ -479,7 +635,11 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
   //     döngüsü riski taşır. `storage` olayı yazan sekmenin kendisinde tetiklenmez.
   useEffect(() => {
     if (bayrak !== 'acik' || etkinKimlik === null) return
-    const izlenenler = [anahtarUret(etkinKimlik, symbol), gostergeAnahtari(etkinKimlik, symbol)]
+    const izlenenler = [
+      anahtarUret(etkinKimlik, symbol),
+      gostergeAnahtari(etkinKimlik, symbol),
+      karsilastirmaAnahtari(etkinKimlik, symbol),
+    ]
     const olay = (e: StorageEvent): void => {
       if (baskaSekmeDegistirdi(e.key, izlenenler)) setBaskaSekmeNotu(ARAYUZ_METINLERI.baskaSekme)
     }
@@ -501,6 +661,9 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     if (grafik === null || seri === null) return
 
     const tiklama = (param: MouseEventParams<Time>): void => {
+      // Karşılaştırma modunda çizim araçları gizlidir; tek seriye düşülmüş mum
+      // grafiğine tıklamak görünmeyen bir araçla çizim eklememeli.
+      if (karsilastirmaModu) return
       const konum = param.point
       if (konum === undefined) return
 
@@ -555,11 +718,14 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
 
     grafik.subscribeClick(tiklama)
     return () => grafik.unsubscribeClick(tiklama)
-  }, [grafikHazir, terminal, cizimDurum.cizimler])
+  }, [grafikHazir, terminal, cizimDurum.cizimler, karsilastirmaModu])
 
   // 9) Klavye: Delete = seçili çizimi silme, Escape = çizimi bırakma.
   useEffect(() => {
     if (bayrak !== 'acik') return
+    // C6: karşılaştırma modunda çizimler görünmez; Delete ile görünmeyen bir
+    // çizimi silmek görünmez bir veri kaybı olurdu.
+    if (karsilastirmaModu) return
     const tus = (olay: KeyboardEvent): void => {
       const hedef = olay.target
       // Bir metin kutusuna yazarken Delete tuşu çizim silmemeli.
@@ -579,7 +745,7 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     }
     window.addEventListener('keydown', tus)
     return () => window.removeEventListener('keydown', tus)
-  }, [bayrak, cizimDurum.seciliId])
+  }, [bayrak, cizimDurum.seciliId, karsilastirmaModu])
 
   // C6: bu kullanıcı + bu sembol için kayıtlı ayarları silme. Onay istenir;
   // çizim belgesi YUKLE([]) ile açılır — geri al yığını da temizlenir, çünkü
@@ -596,12 +762,48 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
     // Boş durum "depoda" sayılır: kaydetme efekti silinen anahtarları yeniden yaratmaz.
     depodakiRef.current.set(anahtarUret(etkinKimlik, symbol), '[]')
     depodakiRef.current.set(gostergeAnahtari(etkinKimlik, symbol), '[]')
+    depodakiRef.current.set(karsilastirmaAnahtari(etkinKimlik, symbol), JSON.stringify(bosSecim()))
+    setSecim(bosSecim())
+    setKarsilastirmaKayitHatasi('')
     cizimGonder({ tip: 'YUKLE', cizimler: [] })
     terminalGonder({ tip: 'GOSTERGELERI_YUKLE', gostergeler: [] })
     setGostergeKayitHatasi('')
     setBaskaSekmeNotu('')
     setHata(sonuc.basarili ? '' : `${ARAYUZ_METINLERI.sifirlamaHatasi}: ${sonuc.hata ?? ''}`)
     setDepoNotu(sonuc.basarili ? ARAYUZ_METINLERI.sifirlandi : '')
+  }
+
+  // S1: sembol ekleme. Karar saf `sembolEkle`'de; reddedilirse NEDEN duyurulur (C2).
+  const sembolEkleIstegi = (olay: FormEvent<HTMLFormElement>): void => {
+    olay.preventDefault()
+    const sonuc = sembolEkle(etkinSecim, symbol, sembolGirdisi)
+    if ('metin' in sonuc) {
+      setSecimDurumu(sonuc.metin)
+      return
+    }
+    const eklenen = sonuc.secim.semboller[sonuc.secim.semboller.length - 1].sembol
+    setSecim(sonuc.secim)
+    setSembolGirdisi('')
+    setSecimDurumu(`${eklenen}: ${KARSILASTIRMA_METINLERI.eklendi}`)
+  }
+
+  const sembolCikarIstegi = (sembol: string): void => {
+    setSecim((onceki) => sembolCikar(onceki, sembol))
+    // Hatalı veri önbellekte kalırsa yeniden eklemek yeniden denemezdi.
+    setEkVeri((onceki) => {
+      if (onceki.get(sembol)?.durum !== 'hata') return onceki
+      const yeni = new Map(onceki)
+      yeni.delete(sembol)
+      return yeni
+    })
+    setSecimDurumu(`${sembol}: ${KARSILASTIRMA_METINLERI.cikarildi}`)
+    // Tıklanan düğme DOM'dan kalkar; klavye odağı kaybolmasın (Y11).
+    sembolGirdiRef.current?.focus()
+  }
+
+  const modDegistir = (mod: GorunumModu): void => {
+    setSecim((onceki) => modSec(onceki, mod))
+    setSecimDurumu('')
   }
 
   const pngIndir = (): void => {
@@ -635,6 +837,8 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
   const gosterilecekNot = [veriUyarisi, depoNotu, baskaSekmeNotu, not]
     .filter((m) => m !== null && m !== '')
     .join(' · ')
+  const karsilastirmaNotu = [gorunum.not, ...ekNotlari].filter((m) => m !== null && m !== '').join(' · ')
+  const dolu = grupDolu(etkinSecim)
 
   return (
     <section
@@ -652,8 +856,99 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
           {ARAYUZ_METINLERI.baslik}
         </span>
         <span style={{ color: RENK.metin, fontSize: 13 }}>{symbol}</span>
-        <span style={{ color: RENK.ikincil, fontSize: 11 }}>{durumEtiketi}</span>
+        {!karsilastirmaModu && <span style={{ color: RENK.ikincil, fontSize: 11 }}>{durumEtiketi}</span>}
       </div>
+
+      {/* C6: iki mod arasında geçiş hiçbir veriyi silmez (mum grafiği gizlenir, kaldırılmaz). */}
+      <div
+        role="group"
+        aria-label={KARSILASTIRMA_METINLERI.gorunum}
+        style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}
+      >
+        {(['tek', 'karsilastirma'] as const).map((mod) => (
+          <button
+            key={mod}
+            type="button"
+            aria-pressed={secim.mod === mod}
+            onClick={() => modDegistir(mod)}
+            style={dugmeStili(secim.mod === mod, false)}
+          >
+            {mod === 'tek' ? KARSILASTIRMA_METINLERI.tekMod : KARSILASTIRMA_METINLERI.karsilastirmaMod}
+          </button>
+        ))}
+      </div>
+
+      {karsilastirmaModu && (
+        <div style={{ marginTop: 8 }}>
+          <ul
+            aria-label={KARSILASTIRMA_METINLERI.semboller}
+            style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', gap: 6, flexWrap: 'wrap' }}
+          >
+            <li style={cipStili()}>
+              <span aria-hidden="true" style={renkKaresi(SERI_RENKLERI[0])} />
+              {anaSembol} <span style={{ color: RENK.soluk }}>({KARSILASTIRMA_METINLERI.anaSembol})</span>
+            </li>
+            {etkinSecim.semboller.map((ek) => (
+              <li key={ek.sembol} style={cipStili()}>
+                <span aria-hidden="true" style={renkKaresi(SERI_RENKLERI[ek.yuva])} />
+                {ek.sembol}
+                <button
+                  type="button"
+                  aria-label={`${KARSILASTIRMA_METINLERI.cikarAria}: ${ek.sembol}`}
+                  onClick={() => sembolCikarIstegi(ek.sembol)}
+                  // Dokunma hedefi ≥ 24×24 px (WCAG 2.5.8); 390 px'te ölçüldü (K11).
+                  style={{ ...dugmeStili(false, false), padding: '2px 8px', marginLeft: 4, minWidth: 28, minHeight: 28 }}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          <form
+            onSubmit={sembolEkleIstegi}
+            style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}
+          >
+            <label htmlFor="karsilastirma-sembol" style={{ color: RENK.ikincil, fontSize: 12 }}>
+              {KARSILASTIRMA_METINLERI.sembolEtiketi}
+            </label>
+            <input
+              id="karsilastirma-sembol"
+              ref={sembolGirdiRef}
+              value={sembolGirdisi}
+              onChange={(olay) => setSembolGirdisi(olay.target.value)}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={12}
+              aria-describedby={dolu ? 'karsilastirma-dolu' : undefined}
+              style={{
+                background: '#0f172a',
+                color: RENK.metin,
+                border: `1px solid ${RENK.cizgi}`,
+                borderRadius: 6,
+                padding: '4px 8px',
+                fontSize: 12,
+                width: 110,
+              }}
+            />
+            <button type="submit" aria-label={KARSILASTIRMA_METINLERI.ekleAria} disabled={dolu} style={dugmeStili(false, dolu)}>
+              {KARSILASTIRMA_METINLERI.ekle}
+            </button>
+            {dolu && (
+              <span id="karsilastirma-dolu" style={{ color: RENK.soluk, fontSize: 11 }}>
+                {KARSILASTIRMA_METINLERI.doluNeden}
+              </span>
+            )}
+          </form>
+          <div role="status" style={{ color: RENK.ikincil, fontSize: 11, marginTop: 6, minHeight: 14 }}>
+            {secimDurumu}
+          </div>
+          <div style={{ color: RENK.soluk, fontSize: 11 }}>{KARSILASTIRMA_METINLERI.gizliDenetimler}</div>
+        </div>
+      )}
+
+      {!karsilastirmaModu && (
+      <>
 
       <div
         role="group"
@@ -774,11 +1069,18 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
           {ARAYUZ_METINLERI.klavyeIpucu}
         </span>
       </div>
+      </>
+      )}
 
       {/* Hata ve uyarılar GÖRÜNÜR: sessizce boş bir grafik bırakılmaz (Y13). */}
-      {(hata !== '' || gostergeKayitHatasi !== '') && (
+      {(hata !== '' || gostergeKayitHatasi !== '' || karsilastirmaKayitHatasi !== '') && (
         <div role="alert" style={{ color: RENK.hata, fontSize: 12, marginTop: 10 }}>
-          {[hata, gostergeKayitHatasi].filter((m) => m !== '').join(' · ')}
+          {[hata, gostergeKayitHatasi, karsilastirmaKayitHatasi].filter((m) => m !== '').join(' · ')}
+        </div>
+      )}
+      {karsilastirmaModu && karsilastirmaNotu !== '' && (
+        <div data-karsilastirma-notu="" style={{ color: RENK.ikincil, fontSize: 11, marginTop: 6 }}>
+          {karsilastirmaNotu}
         </div>
       )}
       {gosterilecekNot !== '' && (
@@ -789,15 +1091,44 @@ export default function GrafikTerminali({ symbol, kullaniciKimligi }: Props) {
           {ARAYUZ_METINLERI.yukleniyor}
         </div>
       )}
-      {!yukleniyor && hata === '' && dilimSonucu.barlar.length === 0 && (
+      {gorunum.grafik === 'mum' && !yukleniyor && hata === '' && dilimSonucu.barlar.length === 0 && (
         <div style={{ color: RENK.soluk, fontSize: 12, marginTop: 6 }}>
           {ARAYUZ_METINLERI.veriYok}
         </div>
       )}
 
-      <div ref={kutuRef} style={{ marginTop: 10 }} />
+      {/* Mum grafiği karşılaştırmada KALDIRILMAZ, gizlenir: görünüm, çizimler ve
+          göstergeler geçişte kaybolmaz (C6, ADR-6). */}
+      <div
+        ref={kutuRef}
+        data-mum-grafigi=""
+        style={{ marginTop: 10, display: gorunum.grafik === 'mum' ? 'block' : 'none' }}
+      />
+      {gorunum.grafik === 'karsilastirma' && hizalama !== null && hizalama.durum === 'tamam' && (
+        <KarsilastirmaGrafigi sonuc={hizalama} yukseklik={GRAFIK_YUKSEKLIGI} renk={KARSILASTIRMA_RENGI} />
+      )}
     </section>
   )
+}
+
+/** Karşılaştırma sembol çipi. */
+function cipStili(): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    color: RENK.metin,
+    fontSize: 12,
+    border: `1px solid ${RENK.cizgi}`,
+    borderRadius: 6,
+    padding: '2px 4px 2px 8px',
+    minHeight: 28,
+  }
+}
+
+/** Lejant/çip renk işareti — metin rengi değil, yanındaki işaret kimliği taşır (C3). */
+function renkKaresi(renk: string): CSSProperties {
+  return { display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: renk }
 }
 
 /** Düğme görünümü; seçili ve devre dışı durumları ayırt edilebilir olmalı. */

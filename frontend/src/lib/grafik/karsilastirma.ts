@@ -183,6 +183,7 @@ export const KARSILASTIRMA_METINLERI = {
   dolu: `Karşılaştırmada en fazla ${AZAMI_GRUP} sembol olabilir; yeni sembol için önce birini çıkarın.`,
   doluNeden: `En fazla ${AZAMI_GRUP} sembol`,
   lejant: 'Karşılaştırma lejantı',
+  semboller: 'Karşılaştırılan semboller',
   veriYok: 'veri yok',
   veriHatasi: 'fiyat verisi okunamadı',
   yukleniyor: 'Karşılaştırma verisi okunuyor…',
@@ -190,6 +191,9 @@ export const KARSILASTIRMA_METINLERI = {
   yetersiz: 'Karşılaştırılacak ikinci bir seri için veri yok',
   ortakGunYok: 'Sembollerin tarih aralıkları kesişmiyor; ortak bir başlangıç (%0) günü olmadığı için tek seri gösteriliyor.',
   verisizDisarida: 'Verisi olmadığı için karşılaştırmaya girmeyen semboller',
+  eklendi: 'karşılaştırmaya eklendi',
+  sembolYukleniyor: 'fiyat verisi okunuyor…',
+  cikarildi: 'karşılaştırmadan çıkarıldı',
   gizliDenetimler: 'Çizimler, göstergeler ve zaman dilimi tek sembol görünümünde; karşılaştırmadan dönünce aynen duruyor.',
 } as const
 
