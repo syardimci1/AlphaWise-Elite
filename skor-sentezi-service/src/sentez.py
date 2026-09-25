@@ -48,6 +48,17 @@ from .olcum import Olcum, OLCULDU, OLCULEMEDI, UYGULANAMAZ
 
 ASGARI_EKSEN = 3
 
+#: Yayimlanmis metodoloji yuzeyinin (/eksenler) surumu. Eksen KIMLIK
+#: alanlari (anahtar/kaynak/yayimlanmis) degistiginde yukseltilir; bunu
+#: unutmak mumkun olmasin diye tests/test_sozlesme.py bir hash kilidi tutar.
+METODOLOJI_SURUMU = "1.0.0"
+
+#: Eksen kimlik alanlarinin EN SON degistigi commit'in tarihi. Elle
+#: SECILMEDI, OLCULDU: `git log -L '/^EKSEN_TANIMLARI = \[/,/^\]$/'
+#: skor-sentezi-service/src/sentez.py` -> tek commit d91dc4b (2026-09-05).
+#: Sonraki sentez.py commit'leri (orn. 792729f) bu blogu degistirmedi.
+METODOLOJI_SON_GUNCELLEME = "2026-09-05"
+
 EKSEN_TANIMLARI = [
     {"anahtar": "finansal_saglik", "ad": "Finansal Sağlık",
      "kaynak": "Altman Z-Score (1968)", "yayimlanmis": True,

@@ -1,5 +1,5 @@
 """Servis sozlesmesi: yasal uyari metni MAA ile AYNI kalmali."""
-import os, sys, re
+import os, sys, re, hashlib, datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 
@@ -105,3 +105,62 @@ def test_saglik_ucu_eksen_sayisini_bildirir():
     from src.main import health
     h = health()
     assert h["eksen_sayisi"] == 5 and h["asgari_eksen"] == 3
+
+
+#: Eksen KIMLIK alanlarinin (anahtar+kaynak+yayimlanmis) kilit hash'i.
+#: Yalnizca kimlik alanlari kilitlenir: 'ad' ve 'aciklama' redaksiyon
+#: metinleridir, degismeleri metodoloji degisikligi DEGILDIR.
+EKSEN_TANIM_KILIDI = \
+    "0514461f035d9ee3427b719da265a56c7f91955146fe1213d5d1492c7f25b2c8"
+
+
+def _eksen_tanim_hash(tanimlar):
+    govde = "\n".join("%s|%s|%s" % (t["anahtar"], t["kaynak"], t["yayimlanmis"])
+                      for t in tanimlar)
+    return hashlib.sha256(govde.encode("utf-8")).hexdigest()
+
+
+def _eksenler_ucunun_govdesi():
+    """main.py'deki /eksenler ucunun govdesini SALT-OKUNUR cikarir.
+
+    _dosyadan_uyari() ile AYNI gerekce: modulu ice aktarmak servisin
+    calisma zamani bagimliliklarini (fastapi) surukler ve sozlesme
+    sorusunu ilgisiz bir kurulum sorusuna cevirir."""
+    yol = _servis_ana_yolu("skor-sentezi-service")
+    assert yol is not None, \
+        "skor-sentezi-service/src/main.py bulunamadi -- ATLANMAZ, BASARISIZ"
+    metin = open(yol, encoding="utf-8").read()
+    m = re.search(r'@app\.get\("/eksenler"\)\ndef eksenler\(\):(.*?)\n@app\.',
+                  metin, re.S)
+    assert m is not None, "/eksenler ucu %s icinde bulunamadi" % yol
+    return m.group(1)
+
+
+def test_eksenler_ucu_surum_ve_son_guncelleme_bildirir():
+    """Yayimlanmis metodoloji yuzeyi KENDI YASINI soylemeli.
+
+    Surum ve son guncelleme damgasi olmadan kullanici, yayimlanan eksen
+    tanimlari ile yasayan urun arasindaki zaman araligini DENETLEYEMEZ."""
+    from src.sentez import METODOLOJI_SURUMU, METODOLOJI_SON_GUNCELLEME
+    assert re.fullmatch(r"\d+\.\d+\.\d+", METODOLOJI_SURUMU), \
+        "METODOLOJI_SURUMU BUYUK.KUCUK.YAMA olmali: %r" % (METODOLOJI_SURUMU,)
+    # Bicim degil GECERLILIK: "2026-13-45" regex'i gecer, tarih degildir.
+    datetime.date.fromisoformat(METODOLOJI_SON_GUNCELLEME)
+
+    govde = _eksenler_ucunun_govdesi()
+    for alan in ("metodoloji_surumu", "son_guncelleme"):
+        assert alan in govde, \
+            "/eksenler yaniti %r alanini tasimiyor" % alan
+
+
+def test_eksen_tanimlari_hash_ile_kilitli():
+    """son_guncelleme ELLE tutulan bir sabittir; tek basina BAYATLAR.
+
+    Bu kilit, eksen kimlik alanlari degistiginde testi kirar ve boylece
+    METODOLOJI_SURUMU ile METODOLOJI_SON_GUNCELLEME'nin birlikte
+    guncellenmesini ZORUNLU kilar. Bir 'yanlis etiket' kusurunu onler."""
+    from src.sentez import EKSEN_TANIMLARI
+    assert _eksen_tanim_hash(EKSEN_TANIMLARI) == EKSEN_TANIM_KILIDI, (
+        "Eksen tanimlari degismis. METODOLOJI_SURUMU'nu yukseltin, "
+        "METODOLOJI_SON_GUNCELLEME'yi degisikligin commit tarihine "
+        "gore guncelleyin, sonra bu kilidi yenileyin.")

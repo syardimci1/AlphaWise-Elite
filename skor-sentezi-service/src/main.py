@@ -10,7 +10,8 @@ import os, time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from .sentez import sentezle, EKSEN_TANIMLARI, ASGARI_EKSEN
+from .sentez import (sentezle, EKSEN_TANIMLARI, ASGARI_EKSEN,
+                     METODOLOJI_SURUMU, METODOLOJI_SON_GUNCELLEME)
 from .karsilastirma import sektor_karsilastir, ASGARI_RAKIP
 from . import veri, onbellek, fmp_capraz
 from .mercek import MERCEKLER, uygula as mercek_uygula, TARAFSIZ
@@ -70,8 +71,16 @@ def _skor_hesapla(ticker: str, onbellek_kullan: bool = True):
 
 @app.get("/eksenler")
 def eksenler():
-    """Eksen tanimlari — hangi eksen hangi yayimlanmis olcute dayaniyor."""
+    """Eksen tanimlari — hangi eksen hangi yayimlanmis olcute dayaniyor.
+
+    Damga, metodolojinin KENDI yasini bildirir: son_guncelleme eksen
+    kimlik alanlarinin son degistigi commit'ten OLCULMUSTUR, bugunun
+    tarihi DEGILDIR. Yayimlanan tanimlar ile yasayan urun arasindaki
+    zaman araligini kullanici boylece kendisi denetleyebilir.
+    """
     return {"eksenler": EKSEN_TANIMLARI, "asgari_eksen": ASGARI_EKSEN,
+            "metodoloji_surumu": METODOLOJI_SURUMU,
+            "son_guncelleme": METODOLOJI_SON_GUNCELLEME,
             "yasal_uyari": YASAL_UYARI}
 
 
