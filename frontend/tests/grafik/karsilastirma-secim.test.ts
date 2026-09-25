@@ -16,8 +16,8 @@ import { tickerDogrula } from '../../src/lib/servis-proxy'
 
 function ekle(secim: KarsilastirmaSecimi, ham: string, ana = 'AAPL'): KarsilastirmaSecimi {
   const sonuc = sembolEkle(secim, ana, ham)
-  assert.equal(sonuc.tamam, true, `${ham} eklenemedi: ${sonuc.tamam ? '' : sonuc.metin}`)
-  return sonuc.tamam ? sonuc.secim : secim
+  if ('metin' in sonuc) assert.fail(`${ham} eklenemedi: ${sonuc.metin}`)
+  return sonuc.secim
 }
 
 test('S1: ekleme normalize eder (boşluk, küçük harf) ve en düşük boş yuvayı verir', () => {
