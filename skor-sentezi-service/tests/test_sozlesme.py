@@ -148,9 +148,17 @@ def test_eksenler_ucu_surum_ve_son_guncelleme_bildirir():
     datetime.date.fromisoformat(METODOLOJI_SON_GUNCELLEME)
 
     govde = _eksenler_ucunun_govdesi()
-    for alan in ("metodoloji_surumu", "son_guncelleme"):
-        assert alan in govde, \
-            "/eksenler yaniti %r alanini tasimiyor" % alan
+    # Yalnizca ALAN ADININ metinde gecmesi YETMEZ (bulundu: bagimsiz
+    # denetci, 2026-09-25): govde alani SABIT-KODLU bir deger ile
+    # doldurup (orn. "9.9.9") testi hala gecirebilirdi - bu, AB-044'un
+    # tarif ettigi 'yanlis etiket' kusurunun aynisidir. Alanin GERCEKTEN
+    # ithal edilen sabite BAGLI oldugu, isim BAZINDA dogrulanir.
+    assert re.search(r'"metodoloji_surumu"\s*:\s*METODOLOJI_SURUMU\b', govde), \
+        ("/eksenler govdesi 'metodoloji_surumu' alanini METODOLOJI_SURUMU "
+         "sabitine BAGLAMIYOR (sabit-kodlu/uydurma bir deger olabilir)")
+    assert re.search(r'"son_guncelleme"\s*:\s*METODOLOJI_SON_GUNCELLEME\b', govde), \
+        ("/eksenler govdesi 'son_guncelleme' alanini METODOLOJI_SON_GUNCELLEME "
+         "sabitine BAGLAMIYOR (sabit-kodlu/uydurma bir deger olabilir)")
 
 
 def test_eksen_tanimlari_hash_ile_kilitli():
