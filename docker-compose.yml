@@ -634,6 +634,17 @@ services:
       - godmode-paper-defter:/veri:ro
     ports:
       - "127.0.0.1:8360:8000"
+    # PORTFOY GRAFIGI (26.09.2026, ADR-006): godmode-paper-trading-service'in
+    # frontend'i bu servise ulasmali. Secenekler: (a) frontend'i alphawise-net'e
+    # baglamak - dis-a bakan konteynerin TUM AlphaWise servislerine erismesi
+    # demek, reddedildi; (b) src/main.py'ye aktarma - korunan dosya, reddedildi;
+    # (c) BU servisi godmode-paper-net'e DE baglamak - bu serviste paper
+    # anahtari YOK, tek etkisi kendi dar /health+/performans ucunu bir ag daha
+    # genisletmek; en dar etki alani. (c) secildi (ayni desen: contracts/
+    # watchlist/tasarim.md ADR-3, evren-tarayici icin uygulanmisti).
+    networks:
+      - default
+      - godmode-paper-net
 
 volumes:
   # godmode-paper-trading'in kendi compose'unda olusturdugu ISIMLI birim.
@@ -650,4 +661,9 @@ networks:
   # referans verilir (external), bu dosya onu olusturmaz/yonetmez.
   supabase:
     name: supabase_default
+    external: true
+  # godmode-paper-trading-service'in kendi compose'unda olusturdugu ag.
+  # Burada YALNIZCA referans verilir (external); bu dosya onu olusturmaz.
+  godmode-paper-net:
+    name: godmode-paper-net
     external: true
