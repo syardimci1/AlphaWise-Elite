@@ -296,7 +296,7 @@ senaryo('E12 (C6, Y12) sıfırlama KLAVYEYLE: onay → iki kayıt silinir, geri 
   await gostergeTikla(s, 'SMA 20')
   await yatayCiz(s)
   await gostergeTikla(s, 'RSI 14') // yazım HÂLÂ bekliyor: sıfırlama onu iptal etmeli
-  const dugme = s.locator('button[aria-label="Bu sembol için kayıtlı gösterge ve çizimleri silme"]')
+  const dugme = s.locator('button[aria-label="Bu sembol için kayıtlı gösterge, çizim ve karşılaştırma ayarlarını silme"]')
   // 1) Vazgeç
   s.once('dialog', (d) => d.dismiss())
   await dugme.focus()

@@ -1,0 +1,22 @@
+GEÇTİ  K1 (S1, Y11) YALNIZ KLAVYEYLE: moda geç, sembol ekle → 2 çizgi + lejant, mum gizli
+GEÇTİ  K2 (C1) taban gününde TÜM seriler %0,00; taban notu tarihi yazar
+GEÇTİ  K3 (C2, FAZ4) 4. sembol: düğme devre dışı + neden görünür, Enter eklemez, istek atılmaz
+GEÇTİ  K4 (FAZ4) aynı sembol iki kez ve ana sembolün kendisi: reddedilir, neden duyurulur
+       turuncu piksel: eksik gün sütunu 0, 30 px sol (veri var) 5
+GEÇTİ  K5 (C4, Y9) eksik günler: lejant sayar, imleç "veri yok" der, çizgi boşluğu KÖPRÜLEMEZ (piksel)
+GEÇTİ  K6 (C6) mod gidiş-dönüşü: mum grafiği (yakınlaştırma, çizim, gösterge) PİKSELİ PİKSELİNE aynı
+GEÇTİ  K7 (C5) kalıcılık: yenileme sonrası mod + semboller + renkler geri gelir; B hesabı görmez
+GEÇTİ  K8 (S6, FAZ4) tek sembol ve veri gelmeyen sembol → mum grafiğine düşer, neden görünür, yeniden dener
+GEÇTİ  K9 (C1) tarih aralıkları kesişmiyor → sahte taban yok, neden görünür
+GEÇTİ  K10 (C6) karşılaştırma modunda Delete/Backspace görünmeyen çizimi SİLMEZ
+       çıkar düğmesi 28×28 px, sayfa genişliği 390
+GEÇTİ  K11 (Y11) 390 px: yatay kaydırma yok, tüm denetimler ekranda, 3 sembol
+       örnek (AAPL, PAHALI): +%3,74 = +%3,74 · +%0,64 = +%0,64 · +%12,13 = +%12,13
+GEÇTİ  K12 (C1, FAZ4) 1000 kat farklı fiyat ölçeği: normalize sonrası AYNI yüzdeler
+GEÇTİ  K13 (C5) "Kayıtlı ayarları sıfırla" karşılaştırma kaydını da siler, geri yazılmaz
+GEÇTİ  K14 başka sekme karşılaştırma kaydını değiştirince görünür uyarı
+       3 × 2 yıl: tık→boyanmış kare medyan 54.2 ms, azami 58.8 ms · setData→kare medyan 10.0 ms, azami 13.0 ms (5 tekrar)
+       3 × 1500 bar: tık→boyanmış kare medyan 79.9 ms, azami 103.6 ms · setData→kare medyan 18.4 ms, azami 21.7 ms (5 tekrar)
+GEÇTİ  K15 (Y10) 3 sembol × 2 yıl ve 3 × 1500 bar: çizim ≤ 1 sn (gerçek Chromium ölçümü)
+
+15 geçti, 0 kaldı
