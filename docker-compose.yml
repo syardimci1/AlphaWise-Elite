@@ -576,6 +576,17 @@ services:
       - skor_sentezi_onbellek:/app/onbellek
     ports:
       - "127.0.0.1:8330:8000"
+    # GODMODE PENTAGON (26.09.2026, AB-067/ADR-006 ile AYNI DESEN):
+    # godmode-paper-trading-service'in kendi on yuzu (paper-izleme, :8311)
+    # bu ekseni gostermek icin bu servise TEK KAYNAKTAN erismeli - ikinci bir
+    # veri kancasi/kopyasi acilmamasi icin. Secenekler ADR-006 ile ayni:
+    # (a) frontend'i alphawise-net'e baglamak - reddedildi (asiri genis erisim);
+    # (b) veriyi baska bir yerden aktarmak - ikinci kaynak riski, reddedildi;
+    # (c) BU servisi godmode-paper-net'e DE baglamak - bu serviste paper
+    # anahtari YOK, en dar etki alani. (c) secildi.
+    networks:
+      - default
+      - godmode-paper-net
 
   # Kriz stres testi (Madde 26, 06.09.2026). Izole servis; mevcut hicbir
   # servise dokunmaz. Karar kodu URETMEZ. Yerel qlib CSV'si SALT-OKUNUR
